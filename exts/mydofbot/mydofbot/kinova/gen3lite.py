@@ -7,7 +7,7 @@ EXTENTION_PATH = os.path.dirname(os.path.realpath(__file__))
 
 MY_GEN3LITE_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
-        usd_path=f"{EXTENTION_PATH}/gen3lite.usd",
+        usd_path=f"{EXTENTION_PATH}/gen3litenc.usd",
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,

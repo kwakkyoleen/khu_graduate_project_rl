@@ -104,7 +104,7 @@ def main():
         env.unwrapped.num_envs,
         env.unwrapped.device,
     )
-    sac = SAC((1, 320, 180), 9, 6)
+    sac = SAC(9, 6)
     sac.load_param(*sav_files)
 
     rewards = np.zeros(env.unwrapped.num_envs, dtype=np.float32)
@@ -112,7 +112,6 @@ def main():
     total_steps = 0
 
     ob, r, _, dones, _ = env.step(actions)
-    depth = ob["depth"].clone()
     joint = ob["joint"].clone()
     target = ob["target"].clone()
 
@@ -125,21 +124,18 @@ def main():
             # print(r)
 
             # action 계산
-            actions = sac.select_action(depth, joint, target)
+            actions = sac.select_action(joint, target)
             # print(actions)
 
             ob, r, terminated, truncated, _ = env.step(actions)
-            ndepth = ob["depth"].clone()
             njoint = ob["joint"].clone()
             ntarget = ob["target"].clone()
             dones = terminated | truncated
             # print(dones)
             sac.process(
                 {
-                    "depth": depth.cpu().numpy(),
                     "joint": joint.cpu().numpy(),
                     "target": target.cpu().numpy(),
-                    "ndepth": ndepth.cpu().numpy(),
                     "njoint": njoint.cpu().numpy(),
                     "ntarget": ntarget.cpu().numpy(),
                     "reward": r.cpu().numpy(),
@@ -148,7 +144,6 @@ def main():
                 }
             )
 
-            depth = ndepth
             joint = njoint
             target = ntarget
             total_steps += 1

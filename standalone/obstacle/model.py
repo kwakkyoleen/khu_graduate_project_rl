@@ -11,44 +11,28 @@ from replay_buffer import PrioritizedReplayBuffer
 # state -> image, angle + tcp, target으로 나누어 받을 예정
 class Actor(nn.Module):
     def __init__(
-        self, img_dim, tcp_dim, action_dim=1, log_std_min=-20, log_std_max=2
+        self, tcp_dim, action_dim=1, log_std_min=-20, log_std_max=2
     ):
         super(Actor, self).__init__()
         self.log_std_min = log_std_min
         self.log_std_max = log_std_max
 
-        # 이미지 처리부
-        self.conv1 = nn.Conv2d(img_dim[0], 32, kernel_size=3, stride=1, padding=1)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
-        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
-        self.in_feature = 128 * (img_dim[1] // 8) * (img_dim[2] // 8)
-        self.fc1 = nn.Linear(self.in_feature, 256)
-
         # 로봇 상태 처리부
-        self.tfc1 = nn.Linear(tcp_dim, 32)
-        self.tfc2 = nn.Linear(32, 64)
+        self.tfc1 = nn.Linear(tcp_dim, 64)
+        self.tfc2 = nn.Linear(64, 128)
 
-        self.fcmean = nn.Linear(320, action_dim)
-        self.fccov = nn.Linear(320, action_dim)
+        self.fcmean = nn.Linear(128, action_dim)
+        self.fccov = nn.Linear(128, action_dim)
 
-    def forward(self, img, tcp):
-        x1 = self.pool(F.leaky_relu(self.conv1(img)))
-        x1 = self.pool(F.leaky_relu(self.conv2(x1)))
-        x1 = self.pool(F.leaky_relu(self.conv3(x1)))
-
-        x1 = x1.reshape(-1, self.in_feature)
-        x1 = F.leaky_relu(self.fc1(x1))
-
+    def forward(self, tcp):
         x2 = F.leaky_relu(self.tfc1(tcp))
         x2 = F.leaky_relu(self.tfc2(x2))
 
-        x = torch.cat((x1, x2), dim=1)
         # get mean
-        mu = self.fcmean(x).tanh()
+        mu = self.fcmean(x2).tanh()
 
         # get std
-        log_std = self.fccov(x).tanh()
+        log_std = self.fccov(x2).tanh()
         log_std = self.log_std_min + 0.5 * (self.log_std_max - self.log_std_min) * (
             log_std + 1
         )
@@ -67,54 +51,31 @@ class Actor(nn.Module):
 
 
 class CriticQ(nn.Module):
-    def __init__(self, img_dim, tcp_dim, action_dim=1):
+    def __init__(self, tcp_dim, action_dim=1):
         super(CriticQ, self).__init__()
-        self.conv1 = nn.Conv2d(img_dim[0], 32, kernel_size=3, stride=1, padding=1)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
-        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
-        self.in_feature = 128 * (img_dim[1] // 8) * (img_dim[2] // 8)
-        self.fc1 = nn.Linear(self.in_feature + action_dim + tcp_dim, 64)
-        self.fc2 = nn.Linear(64, 1)
+        self.fc1 = nn.Linear(action_dim + tcp_dim, 64)
+        self.fc2 = nn.Linear(64, 128)
+        self.fc3 = nn.Linear(128, 1)
 
-    def forward(self, img, tcp, action):
-        x = self.pool(F.relu(self.conv1(img)))
-        x = self.pool(F.relu(self.conv2(x)))
-        x = self.pool(F.relu(self.conv3(x)))
-
-        # x = x.view(-1, self.in_feature)
-        x = x.reshape(-1, self.in_feature)
-        # print("Shape of x after reshape:", x.shape)  # 이미지 처리 후 크기
-        # print("Shape of tcp:", tcp.shape)            # 로봇 상태 정보 크기
-        # print("Shape of action:", action.shape)      # 액션 정보 크기
-        combined = torch.cat((x, tcp, action), dim=1)
+    def forward(self, tcp, action):
+        combined = torch.cat((tcp, action), dim=1)
         combined = F.leaky_relu(self.fc1(combined))
-        combined = self.fc2(combined)
+        combined = F.leaky_relu(self.fc2(combined))
+        combined = self.fc3(combined)
         return combined
 
 
 class CriticV(nn.Module):
-    def __init__(self, img_dim, tcp_dim):
+    def __init__(self, tcp_dim):
         super(CriticV, self).__init__()
-        self.conv1 = nn.Conv2d(img_dim[0], 32, kernel_size=3, stride=1, padding=1)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
-        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
+        self.fc1 = nn.Linear(tcp_dim, 64)
+        self.fc2 = nn.Linear(tcp_dim, 128)
+        self.fc3 = nn.Linear(128, 1)
 
-        self.in_feature = 128 * (img_dim[1] // 8) * (img_dim[2] // 8)
-        self.fc1 = nn.Linear(self.in_feature + tcp_dim, 256)
-        self.fc2 = nn.Linear(256, 1)
-
-    def forward(self, img, tcp):
-        x = self.pool(F.relu(self.conv1(img)))
-        x = self.pool(F.relu(self.conv2(x)))
-        x = self.pool(F.relu(self.conv3(x)))
-
-        # x = x.view(-1, self.in_feature)
-        x = x.reshape(-1, self.in_feature)
-        combined = torch.cat((x, tcp), dim=1)
-        combined = F.leaky_relu(self.fc1(combined))
-        combined = self.fc2(combined)
+    def forward(self, tcp):
+        combined = F.leaky_relu(self.fc1(tcp))
+        combined = F.leaky_relu(self.fc2(tcp))
+        combined = self.fc3(combined)
         return combined
 
 
@@ -152,7 +113,7 @@ class ReplayBuffer:
 
 
 class SAC:
-    def __init__(self, img_dim, tcp_dim, action_dim):
+    def __init__(self, tcp_dim, action_dim):
         self.lr = 0.0001
         self.lrq = 0.0001
         self.lra = 0.0001
@@ -171,13 +132,13 @@ class SAC:
         self.alpha_optimizer = torch.optim.Adam([self.log_alpha], lr=self.lr)
         self.target_entropy = -np.prod((action_dim,)).item()
 
-        self.actor = Actor(img_dim, tcp_dim, action_dim).to(self.device)
-        self.criticQ1 = CriticQ(img_dim, tcp_dim, action_dim).to(self.device)
-        self.criticQ2 = CriticQ(img_dim, tcp_dim, action_dim).to(self.device)
-        self.criticV = CriticV(img_dim, tcp_dim).to(self.device)
+        self.actor = Actor(tcp_dim, action_dim).to(self.device)
+        self.criticQ1 = CriticQ(tcp_dim, action_dim).to(self.device)
+        self.criticQ2 = CriticQ(tcp_dim, action_dim).to(self.device)
+        self.criticV = CriticV(tcp_dim).to(self.device)
         # self.criticQ_target1 = CriticQ(state_dim, action_dim).to(self.device)
         # self.criticQ_target2 = CriticQ(state_dim, action_dim).to(self.device)
-        self.criticV_target = CriticV(img_dim, tcp_dim).to(self.device)
+        self.criticV_target = CriticV(tcp_dim).to(self.device)
         # self.criticQ_target1.load_state_dict(self.criticQ1.state_dict())
         # self.criticQ_target2.load_state_dict(self.criticQ2.state_dict())
         self.criticV_target.load_state_dict(self.criticV.state_dict())
@@ -193,14 +154,13 @@ class SAC:
         # return self.log_alpha.exp()
         return 0.005
 
-    def select_action(self, img, joint, target, training=True):
-        img = img.clone().detach().to(torch.float32).to(self.device).permute(0, 3, 1, 2)
+    def select_action(self, joint, target, training=True):
         tcp = torch.cat((joint, target), dim=1).clone().detach().to(torch.float32).to(self.device)
         # img = torch.tensor(img.clone(), dtype=torch.float32, device=self.device).permute(0, 3, 1, 2)
         # tcp = torch.tensor(torch.cat((joint, target), dim=1).clone(), dtype=torch.float32, device=self.device)
         # img = torch.FloatTensor(img).to(self.device).permute(0, 3, 1, 2)
         # tcp = torch.FloatTensor(np.concatenate((joint, target), axis=1)).to(self.device)
-        action, mu, log_prob = self.actor(img, tcp)
+        action, mu, log_prob = self.actor(tcp)
         # action = action.detach().cpu().numpy()[0]
         # mu = mu.detach().cpu().numpy()[0]
         # log_prob = log_prob.detach().cpu().numpy()[0]
@@ -209,9 +169,9 @@ class SAC:
         else:
             return mu.detach()
 
-    def select_action_log(self, img, tcp, training=True):
+    def select_action_log(self, tcp, training=True):
         # x = torch.tensor(x, dtype=torch.float32).to(self.device).unsqueeze(0)
-        action, mu, log_prob = self.actor(img, tcp)
+        action, mu, log_prob = self.actor(tcp)
         action = action.detach().cpu().numpy()[0]
         mu = mu.detach().cpu().numpy()[0]
         log_prob = log_prob.detach().cpu().numpy()[0]
@@ -230,24 +190,22 @@ class SAC:
         # )
         _, transition, _ = self.buffer.sample()
         done = torch.tensor(transition["done"], dtype=torch.float32, device=self.device, requires_grad=True)
-        img = torch.tensor(transition["depth"], dtype=torch.float32, device=self.device, requires_grad=True).permute(0, 3, 1, 2)
         tcp = torch.tensor(np.concatenate((transition["joint"], transition["target"]), axis=1), dtype=torch.float32, device=self.device, requires_grad=True)
         a = torch.tensor(transition["action"], dtype=torch.float32, device=self.device, requires_grad=True)
         r = torch.tensor(transition["reward"], dtype=torch.float32, device=self.device, requires_grad=True)
-        nimg = torch.tensor(transition["ndepth"], dtype=torch.float32, device=self.device, requires_grad=True).permute(0, 3, 1, 2)
         ntcp = torch.tensor(np.concatenate((transition["njoint"], transition["ntarget"]), axis=1), dtype=torch.float32, device=self.device, requires_grad=True)
 
         # td target 구하기
-        sa, smu, sa_log = self.actor(img, tcp)
+        sa, smu, sa_log = self.actor(tcp)
         alpha = self.log_alpha.exp()
 
         # q function loss
         r = r.unsqueeze(1)
         mask = 1 - done
         mask = mask.unsqueeze(1)
-        q_1_pred = self.criticQ1(img, tcp, a)
-        q_2_pred = self.criticQ2(img, tcp, a)
-        v_target = self.criticV_target(nimg, ntcp)
+        q_1_pred = self.criticQ1(tcp, a)
+        q_2_pred = self.criticQ2(tcp, a)
+        v_target = self.criticV_target(ntcp)
         q_target = r + self.gamma * v_target * mask
         # print("Shape of mask:", mask.shape) 
         # print("Shape of vtarget:", v_target.shape)
@@ -258,8 +216,8 @@ class SAC:
         qf_2_loss = F.mse_loss(q_2_pred, q_target.detach())
 
         # v function loss
-        v_pred = self.criticV(img, tcp)
-        q_pred = torch.min(self.criticQ1(img, tcp, sa), self.criticQ2(img, tcp, sa))
+        v_pred = self.criticV(tcp)
+        q_pred = torch.min(self.criticQ1(tcp, sa), self.criticQ2(tcp, sa))
         v_target = q_pred - alpha * sa_log
         vf_loss = F.mse_loss(v_pred, v_target.detach())
 
@@ -352,9 +310,8 @@ class SAC:
 
 if __name__ == "__main__":
     # input_tensor = input_tensor.permute(0, 3, 1, 2)
-    sac = SAC((1, 720, 1280), 9, 6)
+    sac = SAC(9, 6)
     batch = 8
-    img = np.random.rand(batch, 1, 720, 1280)
     joint = np.random.rand(batch, 6)
     target = np.random.rand(batch, 3)
-    sac.select_action(img, joint, target)
+    sac.select_action(joint, target)

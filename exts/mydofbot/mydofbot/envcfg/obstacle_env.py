@@ -159,22 +159,6 @@ class ObstacleEnv(DirectRLEnv):
         #     cfg=self.target_cfg,
         # )
 
-        # 카메라 설정 # 원래는 1280 720인데 메모리 부족땜시
-        self.camera_cfg = TiledCameraCfg(
-            width=320,
-            height=180,
-            prim_path="/World/envs/env_.*/Robot/UPPER_WRIST/Camera",
-            data_types=["rgb", "depth"],
-            update_period=0.02,
-            spawn=None,
-            # spawn=sim_utils.PinholeCameraCfg(
-            #     focal_length=1.93, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.1, 10.0)
-            # ),
-        )
-        self.camera = TiledCamera(
-            cfg=self.camera_cfg,
-        )
-
         # 충돌 감지 설정
         self.contact_sensor = ContactSensor(
             cfg=ContactSensorCfg(
@@ -295,7 +279,6 @@ class ObstacleEnv(DirectRLEnv):
 
     def _get_observations(self) -> dict:
         # 현재 로봇팔 각도 + 카메라로 입력된 rgbd 데이터(다듬어진) + 타겟의 위치
-        self.camera.update(self.dt)
 
         # body랑 root랑 뭔차이지??
         target_pos = self.scene.rigid_objects["Target_obj"].data.root_pos_w
@@ -305,7 +288,6 @@ class ObstacleEnv(DirectRLEnv):
 
         return {
             # "policy": torch.tensor([]),
-            "depth": self.camera.data.output["depth"],
             "joint": self._robot.data.joint_pos,
             "target": target_pos_rel,
         }
