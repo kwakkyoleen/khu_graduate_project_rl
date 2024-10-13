@@ -286,8 +286,13 @@ class ObstacleEnv(DirectRLEnv):
 
         target_pos_rel = target_pos - robot_pos
 
+        joint_pos = self._robot.data.joint_pos
+        ef_pos = self._robot.data.body_pos_w[:, self.end_effector_idx] - robot_pos
+        ef_trans = self._robot.data.body_quat_w[:, self.end_effector_idx]
+        combined_pos = torch.cat((joint_pos, ef_pos, ef_trans), dim=1)
+
         return {
             # "policy": torch.tensor([]),
-            "joint": self._robot.data.joint_pos,
+            "joint": combined_pos,
             "target": target_pos_rel,
         }

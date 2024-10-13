@@ -11,7 +11,7 @@ parser.add_argument(
     help="Disable fabric and use USD I/O operations.",
 )
 parser.add_argument(
-    "--num_envs", type=int, default=4, help="Number of environments to simulate."
+    "--num_envs", type=int, default=64, help="Number of environments to simulate."
 )
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
@@ -104,7 +104,7 @@ def main():
         env.unwrapped.num_envs,
         env.unwrapped.device,
     )
-    sac = SAC(9, 6)
+    sac = SAC(16, 6)
     sac.load_param(*sav_files)
 
     rewards = np.zeros(env.unwrapped.num_envs, dtype=np.float32)
@@ -120,8 +120,8 @@ def main():
         with torch.inference_mode():
             # step environment
             # actions = 2*torch.rand(env.unwrapped.action_space.shape, device=env.unwrapped.device) - 1
-            # print(ob['depth'].shape, ob['joint'].shape, ob['target'].shape)
-            # print(r)
+            # print(ob['joint'].shape, ob['target'].shape)
+            # print(joint, target)
 
             # action 계산
             actions = sac.select_action(joint, target)

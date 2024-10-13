@@ -118,9 +118,9 @@ class SAC:
         self.lrq = 0.0001
         self.lra = 0.0001
         self.gamma = 0.99
-        self.batch_size = 32
-        self.buffer_size = 3000
-        self.warmup_steps = 100
+        self.batch_size = 1024
+        self.buffer_size = 3000000
+        self.warmup_steps = 10000
         self.tau = 5e-3
         self.device = torch.device("cuda" if torch.cuda.is_available else "cpu")
         self.actor_range = (-2, 2)
