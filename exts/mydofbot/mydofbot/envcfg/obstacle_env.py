@@ -240,8 +240,9 @@ class ObstacleEnv(DirectRLEnv):
         target_distance = torch.sqrt(torch.sum(target_disparity**2, dim=-1))
         target_distance_riverse = 1 / (1 + 10 * target_distance)
 
-        collision_list = contact_list > 1
-        collision_bool = torch.any(collision_list)
+        collision_bool = contact_list > 1
+        # print("col list : ", collision_list)
+        # collision_bool = torch.any(collision_list)
 
         goal_bool = target_distance < 0.01
 
@@ -250,6 +251,9 @@ class ObstacleEnv(DirectRLEnv):
             + collision_bool.float() * self.cfg.rew_scale_collision
             + goal_bool.float() * self.cfg.rew_scale_success
         )
+        # print("col bool : ", collision_bool)
+        # print("col rd : ", collision_bool.float() * self.cfg.rew_scale_collision)
+        # print("rd : ", computed_reward)
         return computed_reward
 
     def _reset_idx(self, env_ids: torch.Tensor | None):
@@ -287,7 +291,8 @@ class ObstacleEnv(DirectRLEnv):
         target_pos_rel = target_pos - robot_pos
 
         joint_pos = self._robot.data.joint_pos
-        ef_pos = self._robot.data.body_pos_w[:, self.end_effector_idx] - robot_pos
+        ef_pos = self._robot.data.body_pos_w - robot_pos.unsqueeze(1)
+        ef_pos = ef_pos.flatten(start_dim=1)
         ef_trans = self._robot.data.body_quat_w[:, self.end_effector_idx]
         combined_pos = torch.cat((joint_pos, ef_pos, ef_trans), dim=1)
 

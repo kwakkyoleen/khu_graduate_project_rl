@@ -83,7 +83,7 @@ def main():
     # reset environment at start
     env.reset()
 
-    sav_files = ["check_actor.pt", "check_critic_v.pt", "check_critic_q1.pt", "check_critic_q2.pt"]
+    sav_files = ["check_actor.pt", "check_critic_v.pt", "check_critic_q1.pt", "check_critic_q2.pt", "buffer"]
 
     # if os.path.isfile("log.txt"):
     #     with open('log.txt', 'r') as f:
@@ -104,7 +104,7 @@ def main():
         env.unwrapped.num_envs,
         env.unwrapped.device,
     )
-    sac = SAC(16, 6)
+    sac = SAC(37, 6)
     sac.load_param(*sav_files)
 
     rewards = np.zeros(env.unwrapped.num_envs, dtype=np.float32)
@@ -154,6 +154,8 @@ def main():
                 sac.save_param(*sav_files)
                 with open('log.txt', 'w') as f:
                     f.write("step:{} rewards: {}".format(total_steps, rewards_latest))
+                # print(f"real : {r.cpu().numpy()}, calc : {sac.criticV.forward(torch.cat((joint, target), dim = 1).clone()).cpu().numpy()}")
+                print(f"loss : {np.mean((r.cpu().numpy() - sac.criticV.forward(torch.cat((joint, target), dim = 1).clone()).cpu().numpy().squeeze()) ** 2)}")
             if np.any(dones.cpu().numpy()):
                 rewards_latest = rewards_latest * (1 - dones.cpu().numpy())
                 rewards_latest += rewards * dones.cpu().numpy()

@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from torch.distributions import Normal
 import os
 from replay_buffer import PrioritizedReplayBuffer
+from pathlib import Path
 
 
 # state -> image, angle + tcp, target으로 나누어 받을 예정
@@ -114,13 +115,13 @@ class ReplayBuffer:
 
 class SAC:
     def __init__(self, tcp_dim, action_dim):
-        self.lr = 0.0001
-        self.lrq = 0.0001
-        self.lra = 0.0001
-        self.gamma = 0.99
+        self.lr = 0.0003
+        self.lrq = 0.0003
+        self.lra = 0.0003
+        self.gamma = 0.97
         self.batch_size = 1024
         self.buffer_size = 3000000
-        self.warmup_steps = 10000
+        self.warmup_steps = 1000
         self.tau = 5e-3
         self.device = torch.device("cuda" if torch.cuda.is_available else "cpu")
         self.actor_range = (-2, 2)
@@ -182,7 +183,7 @@ class SAC:
 
     def update_model(self):
         # 쓸데없는거 지우기?
-        torch.cuda.empty_cache()
+        # torch.cuda.empty_cache()
         # 에피소드 뽑아오기
         # s, a, r, ns, done = map(
         #     lambda x: torch.FloatTensor(x).to(self.device),
@@ -270,7 +271,7 @@ class SAC:
         alpha_loss.backward()
         self.alpha_optimizer.step()
 
-    def load_param(self, apath, vpath, q1path, q2path):
+    def load_param(self, apath, vpath, q1path, q2path, bufferpath):
         success_flag = True
         if os.path.isfile(apath):
             self.actor.load_state_dict(torch.load(apath))
@@ -291,13 +292,15 @@ class SAC:
 
         else:
             success_flag = False
+        # self.buffer.load(Path('.'), bufferpath)
         return success_flag
 
-    def save_param(self, apath, vpath, q1path, q2path):
+    def save_param(self, apath, vpath, q1path, q2path, bufferpath):
         torch.save(self.actor.state_dict(), apath)
         torch.save(self.criticV.state_dict(), vpath)
         torch.save(self.criticQ1.state_dict(), q1path)
         torch.save(self.criticQ2.state_dict(), q2path)
+        # self.buffer.save(Path('.'), bufferpath)
 
     # transit은 dict 형태 (transit = {state:np.arr, action:np,arr...})
     def process(self, transit):
