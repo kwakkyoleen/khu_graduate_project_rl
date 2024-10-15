@@ -34,7 +34,7 @@ from ..kinova.gen3lite import MY_GEN3LITE_CFG
 @configclass
 class ObstacleEnvCfg(DirectRLEnvCfg):
     # env
-    decimation = 12  # 랜더링 간격
+    decimation = 6  # 랜더링 간격
     episode_length_s = 15.0  # 에피소드 길이
     robot_dof_angle_scales = 0.5  # [라디안] 1도는 0.0174라디안임
     num_actions = 6  # 액션의 갯수
@@ -66,6 +66,9 @@ class ObstacleEnvCfg(DirectRLEnvCfg):
     rew_scale_time = -0.2
     rew_scale_collision = -100.0
     rew_scale_success = 500.0
+
+    # angle scale
+    angle_scale_factor = 0.06
 
 
 # @configclass
@@ -129,7 +132,7 @@ class ObstacleEnv(DirectRLEnv):
             0, :, 1
         ].to(device=self.device)
 
-        self.robot_dof_angle_scales = torch.ones_like(self.robot_dof_lower_limits)
+        self.robot_dof_angle_scales = torch.ones_like(self.robot_dof_lower_limits) * self.cfg.angle_scale_factor
 
         self.robot_dof_targets = torch.zeros(
             (self.num_envs, self._robot.num_joints), device=self.device
@@ -189,7 +192,9 @@ class ObstacleEnv(DirectRLEnv):
             -1.0, 1.0
         )  # 입력값은 -1에서 1사이로 받고 나중에 스케일링 하는 방식으로 ㄱㄱ
         # target을 쓰는게 맞나 아님 현재 각도를 쓰는게 맞나
+        # print(f"action : {actions}")
         targets = self.robot_dof_targets + self.robot_dof_angle_scales * self.actions
+        # print(f"scaled : {self.robot_dof_angle_scales * self.actions}")
         # targets = (
         #     self._robot.data.joint_pos + self.robot_dof_angle_scales * self.actions
         # )

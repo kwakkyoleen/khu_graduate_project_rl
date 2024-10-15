@@ -17,7 +17,7 @@ MY_GEN3LITE_CFG = ArticulationCfg(
     init_state=ArticulationCfg.InitialStateCfg(
         joint_pos={
             "J0": 0.0,
-            "J1": 1.712,
+            "J1": 1.312,
             "J2": 0.0,
             "J3": 0.0,
             "J4": 0.0,
