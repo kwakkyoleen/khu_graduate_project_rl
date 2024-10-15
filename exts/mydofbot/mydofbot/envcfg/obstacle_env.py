@@ -62,7 +62,8 @@ class ObstacleEnvCfg(DirectRLEnvCfg):
     )
 
     # reward scales
-    rew_scale_distance = 2
+    rew_scale_distance = 30.0
+    rew_scale_time = -0.2
     rew_scale_collision = -100.0
     rew_scale_success = 500.0
 
@@ -135,6 +136,7 @@ class ObstacleEnv(DirectRLEnv):
         )
 
         self.end_effector_idx = self._robot.find_bodies("END_EFFECTOR")[0][0]
+        self._target_distance_prev = None
 
     def _setup_scene(self):
         self._robot = Articulation(self.cfg.robot_cfg)
@@ -238,7 +240,9 @@ class ObstacleEnv(DirectRLEnv):
     ) -> torch.Tensor:
         target_disparity = target_pos - robot_ef_pos
         target_distance = torch.sqrt(torch.sum(target_disparity**2, dim=-1))
-        target_distance_riverse = 1 / (1 + 10 * target_distance)
+        if self._target_distance_prev is None :
+            self._target_distance_prev = target_distance
+        target_distance_disparity = self._target_distance_prev - target_distance
 
         collision_bool = contact_list > 1
         # print("col list : ", collision_list)
@@ -247,10 +251,12 @@ class ObstacleEnv(DirectRLEnv):
         goal_bool = target_distance < 0.01
 
         computed_reward = (
-            target_distance_riverse * self.cfg.rew_scale_distance
+            target_distance_disparity * self.cfg.rew_scale_distance
+            + self.cfg.rew_scale_time
             + collision_bool.float() * self.cfg.rew_scale_collision
             + goal_bool.float() * self.cfg.rew_scale_success
         )
+        self._target_distance_prev = target_distance
         # print("col bool : ", collision_bool)
         # print("col rd : ", collision_bool.float() * self.cfg.rew_scale_collision)
         # print("rd : ", computed_reward)

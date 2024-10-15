@@ -148,6 +148,7 @@ def main():
             target = ntarget
             total_steps += 1
             rewards += r.cpu().numpy()
+            print(r.cpu().numpy())
 
             if total_steps % 500 == 0:
                 print("step:{} rewards: {}".format(total_steps, rewards_latest))
