@@ -19,15 +19,17 @@ class Actor(nn.Module):
         self.log_std_max = log_std_max
 
         # 로봇 상태 처리부
-        self.tfc1 = nn.Linear(tcp_dim, 64)
-        self.tfc2 = nn.Linear(64, 128)
+        self.tfc1 = nn.Linear(tcp_dim, 512)
+        self.tfc2 = nn.Linear(512, 256)
+        self.tfc3 = nn.Linear(256, 256)
 
-        self.fcmean = nn.Linear(128, action_dim)
-        self.fccov = nn.Linear(128, action_dim)
+        self.fcmean = nn.Linear(256, action_dim)
+        self.fccov = nn.Linear(256, action_dim)
 
     def forward(self, tcp):
         x2 = F.leaky_relu(self.tfc1(tcp))
         x2 = F.leaky_relu(self.tfc2(x2))
+        x2 = F.leaky_relu(self.tfc3(x2))
 
         # get mean
         mu = self.fcmean(x2).tanh()
@@ -54,29 +56,33 @@ class Actor(nn.Module):
 class CriticQ(nn.Module):
     def __init__(self, tcp_dim, action_dim=1):
         super(CriticQ, self).__init__()
-        self.fc1 = nn.Linear(action_dim + tcp_dim, 64)
-        self.fc2 = nn.Linear(64, 128)
-        self.fc3 = nn.Linear(128, 1)
+        self.fc1 = nn.Linear(action_dim + tcp_dim, 512)
+        self.fc2 = nn.Linear(512, 256)
+        self.fc3 = nn.Linear(256, 256)
+        self.fc4 = nn.Linear(256, 1)
 
     def forward(self, tcp, action):
         combined = torch.cat((tcp, action), dim=1)
         combined = F.leaky_relu(self.fc1(combined))
         combined = F.leaky_relu(self.fc2(combined))
-        combined = self.fc3(combined)
+        combined = F.leaky_relu(self.fc3(combined))
+        combined = self.fc4(combined)
         return combined
 
 
 class CriticV(nn.Module):
     def __init__(self, tcp_dim):
         super(CriticV, self).__init__()
-        self.fc1 = nn.Linear(tcp_dim, 64)
-        self.fc2 = nn.Linear(tcp_dim, 128)
-        self.fc3 = nn.Linear(128, 1)
+        self.fc1 = nn.Linear(tcp_dim, 512)
+        self.fc2 = nn.Linear(512, 256)
+        self.fc3 = nn.Linear(256, 256)
+        self.fc4 = nn.Linear(256, 1)
 
     def forward(self, tcp):
         combined = F.leaky_relu(self.fc1(tcp))
-        combined = F.leaky_relu(self.fc2(tcp))
-        combined = self.fc3(combined)
+        combined = F.leaky_relu(self.fc2(combined))
+        combined = F.leaky_relu(self.fc3(combined))
+        combined = self.fc4(combined)
         return combined
 
 
