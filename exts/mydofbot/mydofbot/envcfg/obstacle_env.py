@@ -138,6 +138,8 @@ class ObstacleEnv(DirectRLEnv):
             (self.num_envs, self._robot.num_joints), device=self.device
         )
 
+        self._donecount = torch.zeros((self.num_envs), device=self.device)
+
         self.end_effector_idx = self._robot.find_bodies("END_EFFECTOR")[0][0]
         self._target_distance_prev = None
 
@@ -215,7 +217,12 @@ class ObstacleEnv(DirectRLEnv):
         contact_list = torch.sqrt(contact_list)
         contact_list, _ = torch.max(contact_list, dim=1)
 
-        terminated = contact_list > 1
+        mask_plus = contact_list > 1
+        mask_reset = contact_list <= 1
+        self._donecount[mask_plus] += 1
+        self._donecount[mask_reset] = 0
+
+        terminated = self._donecount > 5
 
         # terminated = torch.tensor(False)
         # 시간이 너무 많이 지나면 truncated
@@ -291,6 +298,9 @@ class ObstacleEnv(DirectRLEnv):
         self.target_obj.write_root_velocity_to_sim(
             torch.zeros_like(self.target_obj.data.root_vel_w[env_ids]), env_ids=env_ids
         )
+
+        # count reset
+        self._donecount[env_ids] = 0
 
     def _get_observations(self) -> dict:
         # 현재 로봇팔 각도 + 카메라로 입력된 rgbd 데이터(다듬어진) + 타겟의 위치
