@@ -151,7 +151,8 @@ def main():
             # print(r.cpu().numpy())
 
             if total_steps % 500 == 0:
-                print("step:{} rewards: {}".format(total_steps, rewards_latest))
+                # print("step:{} rewards: {}".format(total_steps, rewards_latest))
+                print("step:{} loss: {}".format(total_steps, r.cpu().numpy() - sac.criticV.forward(torch.cat((joint, target), dim = 1).clone()).cpu().numpy().squeeze()))
                 sac.save_param(*sav_files)
                 with open('log.txt', 'w') as f:
                     f.write("step:{} rewards: {}".format(total_steps, rewards_latest))

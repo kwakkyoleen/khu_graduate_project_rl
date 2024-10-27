@@ -62,7 +62,7 @@ class ObstacleEnvCfg(DirectRLEnvCfg):
     )
 
     # reward scales
-    rew_scale_distance = 30.0
+    rew_scale_distance = -1.0
     rew_scale_time = -0.2
     rew_scale_collision = -100.0
     rew_scale_success = 500.0
@@ -203,6 +203,7 @@ class ObstacleEnv(DirectRLEnv):
         self.robot_dof_targets[:] = torch.clamp(
             targets, self.robot_dof_lower_limits, self.robot_dof_upper_limits
         )
+        # print(self.robot_dof_targets[1])
 
         self.target_obj.write_root_velocity_to_sim(
             torch.zeros_like(self.target_obj.data.root_vel_w)
@@ -260,11 +261,10 @@ class ObstacleEnv(DirectRLEnv):
         # print("col list : ", collision_list)
         # collision_bool = torch.any(collision_list)
 
-        goal_bool = target_distance < 0.01
+        goal_bool = target_distance < 0.03
 
         computed_reward = (
-            target_distance_disparity * self.cfg.rew_scale_distance
-            + self.cfg.rew_scale_time
+            target_distance * self.cfg.rew_scale_distance
             + collision_bool.float() * self.cfg.rew_scale_collision
             + goal_bool.float() * self.cfg.rew_scale_success
         )
@@ -289,6 +289,7 @@ class ObstacleEnv(DirectRLEnv):
         joint_vel = torch.zeros_like(joint_pos)
         self._robot.set_joint_position_target(joint_pos, env_ids=env_ids)
         self._robot.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
+        self.robot_dof_targets[env_ids] = joint_pos
 
         # target state
         rand_target_pose = sample_uniform(-0.7, 0.7, (len(env_ids), 7), self.device)
