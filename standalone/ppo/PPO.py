@@ -71,6 +71,8 @@ class ActorCritic(nn.Module):
                         nn.Tanh(),
                         nn.Linear(64, 1)
                     )
+        self.actor = self.actor.to(device)
+        self.critic = self.critic.to(device)
         
     def set_action_std(self, new_action_std):
         if self.has_continuous_action_space:
@@ -117,6 +119,12 @@ class ActorCritic(nn.Module):
         action_logprobs = dist.log_prob(action)
         dist_entropy = dist.entropy()
         state_values = self.critic(state)
+
+        # grad_fn 확인용 출력
+        print("action grad_fn:", action.grad_fn)
+        print("logprobs grad_fn:", action_logprobs.grad_fn)
+        print("state_values grad_fn:", state_values.grad_fn)
+        print("dist_entropy grad_fn:", dist_entropy.grad_fn)
         
         return action_logprobs, state_values, dist_entropy
 
@@ -176,7 +184,7 @@ class PPO:
 
         if self.has_continuous_action_space:
             with torch.no_grad():
-                state = torch.tensor(state, device=device)
+                state = torch.tensor(state.clone().detach(), dtype=torch.float32, device=device)
                 action, action_logprob, state_val = self.policy_old.act(state)
 
             # for i in range(action.size(0)):
@@ -194,7 +202,7 @@ class PPO:
             return action.detach().cpu().numpy()
         else:
             with torch.no_grad():
-                state = torch.tensor(state, device=device)
+                state = torch.tensor(state.clone().detach(), dtype=torch.float32, device=device)
                 action, action_logprob, state_val = self.policy_old.act(state)
 
             # for i in range(action.size(0)):
@@ -234,13 +242,13 @@ class PPO:
             rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
 
             # convert list to tensor
-            old_states = torch.squeeze(torch.stack(env_states, dim=0)).detach().to(device).requires_grad_(True)
-            old_actions = torch.squeeze(torch.stack(env_actions, dim=0)).detach().to(device).requires_grad_(True)
-            old_logprobs = torch.squeeze(torch.stack(env_logprobs, dim=0)).detach().to(device).requires_grad_(True)
-            old_state_values = torch.squeeze(torch.stack(env_state_values, dim=0)).detach().to(device).requires_grad_(True)
+            old_states = torch.squeeze(torch.stack(env_states, dim=0)).to(device)
+            old_actions = torch.squeeze(torch.stack(env_actions, dim=0)).to(device)
+            old_logprobs = torch.squeeze(torch.stack(env_logprobs, dim=0)).to(device)
+            old_state_values = torch.squeeze(torch.stack(env_state_values, dim=0)).to(device)
 
             # calculate advantages
-            advantages = rewards.detach() - old_state_values.detach()
+            advantages = rewards - old_state_values
 
             # Optimize policy for K epochs
             for _ in range(self.K_epochs):
@@ -252,7 +260,7 @@ class PPO:
                 state_values = torch.squeeze(state_values)
                 
                 # Finding the ratio (pi_theta / pi_theta__old)
-                ratios = torch.exp(logprobs - old_logprobs.detach())
+                ratios = torch.exp(logprobs - old_logprobs)
 
                 # Finding Surrogate Loss  
                 surr1 = ratios * advantages
@@ -263,6 +271,8 @@ class PPO:
                 
                 # take gradient step
                 self.optimizer.zero_grad()
+                loss.requires_grad_(True)
+                print("loss grad_fn:", loss.grad_fn)
                 loss.mean().backward()
                 self.optimizer.step()
                 
