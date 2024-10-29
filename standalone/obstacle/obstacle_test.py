@@ -149,14 +149,18 @@ def main():
             total_steps += 1
             rewards += r.cpu().numpy()
             # print(r.cpu().numpy())
+            if total_steps % 10 == 0 and False:
+                print(f"real : {r.cpu().numpy()[0]}, calc : {sac.criticV.forward(torch.cat((joint, target), dim = 1).clone()).cpu().numpy()[0]}")
+                print(f"joint : {joint.cpu().numpy()[0, 27:30]}, target : {target.cpu().numpy()[0]}")
 
             if total_steps % 500 == 0:
-                # print("step:{} rewards: {}".format(total_steps, rewards_latest))
-                print("step:{} loss: {}".format(total_steps, r.cpu().numpy() - sac.criticV.forward(torch.cat((joint, target), dim = 1).clone()).cpu().numpy().squeeze()))
+                print("step:{} rewards: {}".format(total_steps, rewards_latest))
+                # print("step:{} loss: {}".format(total_steps, r.cpu().numpy() - sac.criticV.forward(torch.cat((joint, target), dim = 1).clone()).cpu().numpy().squeeze()))
                 sac.save_param(*sav_files)
                 with open('log.txt', 'w') as f:
                     f.write("step:{} rewards: {}".format(total_steps, rewards_latest))
-                # print(f"real : {r.cpu().numpy()}, calc : {sac.criticV.forward(torch.cat((joint, target), dim = 1).clone()).cpu().numpy()}")
+                print(f"real : {r.cpu().numpy()}, calc : {sac.criticV.forward(torch.cat((joint, target), dim = 1).clone()).cpu().numpy()}")
+                # print(f"calc : {sac.criticV.forward(torch.cat((joint, target), dim = 1).clone()).cpu().numpy()}")
                 print(f"loss : {np.mean((r.cpu().numpy() - sac.criticV.forward(torch.cat((joint, target), dim = 1).clone()).cpu().numpy().squeeze()) ** 2)}")
             if np.any(dones.cpu().numpy()):
                 rewards_latest = rewards_latest * (1 - dones.cpu().numpy())
@@ -164,7 +168,7 @@ def main():
                 rewards = rewards * (1 - dones.cpu().numpy())
             if np.all(dones.cpu().numpy()):
                 env.reset()
-                print("step:{} rewards: {}".format(total_steps, rewards))
+                # print("step:{} rewards: {}".format(total_steps, rewards))
                 # if score < rewards:
                 #     score = rewards
                 #     torch.save(sac.actor.state_dict(), "actor.pt")

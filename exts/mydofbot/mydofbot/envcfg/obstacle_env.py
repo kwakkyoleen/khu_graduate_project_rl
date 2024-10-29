@@ -36,7 +36,7 @@ class ObstacleEnvCfg(DirectRLEnvCfg):
     # env
     decimation = 6  # 랜더링 간격
     episode_length_s = 15.0  # 에피소드 길이
-    robot_dof_angle_scales = 0.5  # [라디안] 1도는 0.0174라디안임
+    robot_dof_angle_scales = 0.3  # [라디안] 1도는 0.0174라디안임
     num_actions = 6  # 액션의 갯수
     num_observations = 3  # 관찰 갯수
     num_states = 0
@@ -62,10 +62,10 @@ class ObstacleEnvCfg(DirectRLEnvCfg):
     )
 
     # reward scales
-    rew_scale_distance = -1.0
+    rew_scale_distance = -8.0
     rew_scale_time = -0.2
-    rew_scale_collision = -100.0
-    rew_scale_success = 500.0
+    rew_scale_collision = -400.0
+    rew_scale_success = 5000.0
 
     # angle scale
     angle_scale_factor = 0.06

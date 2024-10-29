@@ -121,13 +121,13 @@ class ReplayBuffer:
 
 class SAC:
     def __init__(self, tcp_dim, action_dim):
-        self.lr = 0.0003
-        self.lrq = 0.0003
+        self.lr = 0.01
+        self.lrq = 0.01
         self.lra = 0.0003
-        self.gamma = 0.97
+        self.gamma = 0.99
         self.batch_size = 1024
         self.buffer_size = 3000000
-        self.warmup_steps = 1000
+        self.warmup_steps = 100
         self.tau = 5e-3
         self.device = torch.device("cuda" if torch.cuda.is_available else "cpu")
         self.actor_range = (-2, 2)
@@ -196,12 +196,12 @@ class SAC:
         #     self.buffer.sample(self.batch_size),
         # )
         _, transition, _ = self.buffer.sample()
-        done = torch.tensor(transition["done"], dtype=torch.float32, device=self.device, requires_grad=True)
-        tcp = torch.tensor(np.concatenate((transition["joint"], transition["target"]), axis=1), dtype=torch.float32, device=self.device, requires_grad=True)
-        a = torch.tensor(transition["action"], dtype=torch.float32, device=self.device, requires_grad=True)
-        r = torch.tensor(transition["reward"], dtype=torch.float32, device=self.device, requires_grad=True)
-        ntcp = torch.tensor(np.concatenate((transition["njoint"], transition["ntarget"]), axis=1), dtype=torch.float32, device=self.device, requires_grad=True)
-
+        done = torch.tensor(transition["done"], dtype=torch.float32, device=self.device)
+        tcp = torch.tensor(np.concatenate((transition["joint"], transition["target"]), axis=1), dtype=torch.float32, device=self.device)
+        a = torch.tensor(transition["action"], dtype=torch.float32, device=self.device)
+        r = torch.tensor(transition["reward"], dtype=torch.float32, device=self.device)
+        ntcp = torch.tensor(np.concatenate((transition["njoint"], transition["ntarget"]), axis=1), dtype=torch.float32, device=self.device)
+        
         # td target 구하기
         sa, smu, sa_log = self.actor(tcp)
         alpha = self.log_alpha.exp()
