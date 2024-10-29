@@ -99,13 +99,13 @@ class ActorCritic(nn.Module):
         action_logprob = dist.log_prob(action)
         state_val = self.critic(state)
 
-        return action.detach(), action_logprob.detach(), state_val.detach()
+        return action, action_logprob, state_val
     
     def evaluate(self, state, action):
 
         if self.has_continuous_action_space:
             action_mean = self.actor(state)
-            
+            # action_mean.requires_grad_(True)
             action_var = self.action_var.expand_as(action_mean)
             cov_mat = torch.diag_embed(action_var).to(device)
             dist = MultivariateNormal(action_mean, cov_mat)
@@ -115,16 +115,26 @@ class ActorCritic(nn.Module):
                 action = action.reshape(-1, self.action_dim)
         else:
             action_probs = self.actor(state)
+            # action_probs.requires_grad_(True)
             dist = Categorical(action_probs)
+
         action_logprobs = dist.log_prob(action)
         dist_entropy = dist.entropy()
         state_values = self.critic(state)
 
+        # action_logprobs.requires_grad_(True)
+        # dist_entropy.requires_grad_(True)
+        # state_values.requires_grad_(True)
+
         # grad_fn 확인용 출력
-        print("action grad_fn:", action.grad_fn)
-        print("logprobs grad_fn:", action_logprobs.grad_fn)
-        print("state_values grad_fn:", state_values.grad_fn)
-        print("dist_entropy grad_fn:", dist_entropy.grad_fn)
+        # print("action r:", action.requires_grad)
+        # print("logprobs r:", action_logprobs.requires_grad)
+        # print("state_values r:", state_values.requires_grad)
+        # print("dist_entropy r:", dist_entropy.requires_grad)
+        # print("action grad_fn:", action.grad)
+        # print("logprobs grad_fn:", action_logprobs.grad)
+        # print("state_values grad_fn:", state_values.grad)
+        # print("dist_entropy grad_fn:", dist_entropy.grad)
         
         return action_logprobs, state_values, dist_entropy
 
@@ -183,9 +193,10 @@ class PPO:
     def select_action(self, state):
 
         if self.has_continuous_action_space:
-            with torch.no_grad():
-                state = torch.tensor(state.clone().detach(), dtype=torch.float32, device=device)
-                action, action_logprob, state_val = self.policy_old.act(state)
+            
+            state = state.clone().detach().requires_grad_(True)
+            # torch.tensor(state, dtype=torch.float32, device=device)
+            action, action_logprob, state_val = self.policy_old.act(state)
 
             # for i in range(action.size(0)):
             #     self.buffer.states.append(state[i])
@@ -199,11 +210,11 @@ class PPO:
             self.buffer.state_values.append(state_val)
 
             # return action.detach().cpu().numpy().flatten()
-            return action.detach().cpu().numpy()
+            return action.cpu().numpy()
         else:
-            with torch.no_grad():
-                state = torch.tensor(state.clone().detach(), dtype=torch.float32, device=device)
-                action, action_logprob, state_val = self.policy_old.act(state)
+        
+            state = torch.tensor(state, dtype=torch.float32, device=device)
+            action, action_logprob, state_val = self.policy_old.act(state)
 
             # for i in range(action.size(0)):
             #     self.buffer.states.append(state[i])
@@ -217,6 +228,43 @@ class PPO:
             self.buffer.state_values.append(state_val)
 
             return action.item()
+
+    def update_sample(self):
+        for env_idx in range(self.buffer.rewards[0].shape[0]):
+
+            env_rewards = [episode[env_idx] for episode in self.buffer.rewards]
+            env_states = [episode[env_idx] for episode in self.buffer.states]
+            env_actions = [episode[env_idx] for episode in self.buffer.actions]
+            env_logprobs = [episode[env_idx] for episode in self.buffer.logprobs]
+            env_state_values = [episode[env_idx] for episode in self.buffer.state_values]
+            env_is_terminals = [episode[env_idx] for episode in self.buffer.is_terminals]
+
+            rewards = []
+            discounted_reward = 0
+            for reward, is_terminal in zip(reversed(env_rewards), reversed(env_is_terminals)):
+                if is_terminal:
+                    discounted_reward = 0
+                discounted_reward = reward + (self.gamma * discounted_reward)
+                rewards.insert(0, discounted_reward)
+                
+            # Normalizing the rewards
+            rewards = torch.tensor(rewards, dtype=torch.float32, requires_grad=True).to(device)
+            rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
+
+            # convert list to tensor
+            old_states = torch.squeeze(torch.stack(env_states, dim=0)).to(device)
+            old_actions = torch.squeeze(torch.stack(env_actions, dim=0)).to(device)
+            old_logprobs = torch.squeeze(torch.stack(env_logprobs, dim=0)).to(device)
+            old_state_values = torch.squeeze(torch.stack(env_state_values, dim=0)).to(device)
+
+            state = torch.randn(5, old_states.shape[1], requires_grad=True, dtype=torch.float32).to(device)
+            action = torch.randn(5, old_actions.shape[1], requires_grad=True, dtype=torch.float32).to(device)
+            logprobs, state_values, dist_entropy = self.policy.evaluate(state, action)
+
+            # 단순 손실로 backward 테스트
+            test_loss = logprobs.mean() + state_values.mean() + dist_entropy.mean()
+            print("test_loss grad_fn:", test_loss.grad_fn)
+            test_loss.backward()  # 성공 시 그래디언트가 추적됨
 
     def update(self):
         # Monte Carlo estimate of returns
@@ -238,7 +286,7 @@ class PPO:
                 rewards.insert(0, discounted_reward)
                 
             # Normalizing the rewards
-            rewards = torch.tensor(rewards, dtype=torch.float32).to(device)
+            rewards = torch.tensor(rewards, dtype=torch.float32, requires_grad=True).to(device)
             rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
 
             # convert list to tensor
@@ -246,6 +294,11 @@ class PPO:
             old_actions = torch.squeeze(torch.stack(env_actions, dim=0)).to(device)
             old_logprobs = torch.squeeze(torch.stack(env_logprobs, dim=0)).to(device)
             old_state_values = torch.squeeze(torch.stack(env_state_values, dim=0)).to(device)
+
+            old_states.requires_grad_(True)
+            old_actions.requires_grad_(True)
+            old_logprobs.requires_grad_(True)
+            old_state_values.requires_grad_(True)
 
             # calculate advantages
             advantages = rewards - old_state_values
@@ -271,9 +324,10 @@ class PPO:
                 
                 # take gradient step
                 self.optimizer.zero_grad()
-                loss.requires_grad_(True)
-                print("loss grad_fn:", loss.grad_fn)
-                loss.mean().backward()
+                lossmean = loss.mean()
+                lossmean.requires_grad = True
+                # print("loss grad_fn:", lossmean.grad)
+                lossmean.backward()
                 self.optimizer.step()
                 
         # Copy new weights into old policy

@@ -80,7 +80,7 @@ def main():
 
     has_continuous_action_space = True  # continuous action space; else discrete
 
-    max_ep_len = 200                   # max timesteps in one episode
+    max_ep_len = 310                   # max timesteps in one episode
     max_training_timesteps = int(3e6)   # break training loop if timeteps > max_training_timesteps
 
     print_freq = max_ep_len * 10        # print avg reward in the interval (in num timesteps)
@@ -195,7 +195,7 @@ def main():
     ob, r, _, dones, _ = env.step(actions)
     joint = ob["joint"]
     target = ob["target"]
-    state = torch.cat((joint, target), dim = 1)
+    state = torch.cat((joint, target), dim = 1).clone().detach()
     current_ep_reward = 0
 
     while simulation_app.is_running():
@@ -207,11 +207,11 @@ def main():
             njoint = ob["joint"]
             ntarget = ob["target"]
             done = terminated | truncated
-            state = torch.cat((njoint, ntarget), dim = 1)
+            state = torch.cat((njoint, ntarget), dim = 1).detach().clone()
 
             # saving reward and is_terminals
-            ppo_agent.buffer.rewards.append(reward)
-            ppo_agent.buffer.is_terminals.append(done)
+            ppo_agent.buffer.rewards.append(reward.detach().clone())
+            ppo_agent.buffer.is_terminals.append(done.detach().clone())
 
             time_step += 1
             rewards += reward.cpu().numpy()
@@ -221,7 +221,7 @@ def main():
                 rewards_latest = rewards_latest * (1 - done.cpu().numpy())
                 rewards_latest += rewards * done.cpu().numpy()
                 rewards = rewards * (1 - done.cpu().numpy())
-
+            
             # update PPO agent
             if time_step % update_timestep == 0:
                 print("update..")
