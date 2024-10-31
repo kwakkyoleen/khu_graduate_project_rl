@@ -85,7 +85,7 @@ def main():
 
     print_freq = max_ep_len * 10        # print avg reward in the interval (in num timesteps)
     log_freq = max_ep_len * 2           # log avg reward in the interval (in num timesteps)
-    save_model_freq = int(1e5)          # save model frequency (in num timesteps)
+    save_model_freq = int(1e4)          # save model frequency (in num timesteps)
 
     action_std = 0.6                    # starting std for action distribution (Multivariate Normal)
     action_std_decay_rate = 0.05        # linearly decay action_std (action_std = action_std - action_std_decay_rate)
@@ -144,7 +144,7 @@ def main():
     #####################################################
 
     ################### checkpointing ###################
-    run_num_pretrained = 0      #### change this to prevent overwriting weights in same env_name folder
+    run_num_pretrained = 1      #### change this to prevent overwriting weights in same env_name folder
 
     directory = "PPO_preTrained"
     if not os.path.exists(directory):
@@ -154,13 +154,14 @@ def main():
     if not os.path.exists(directory):
         os.makedirs(directory)
 
-
     checkpoint_path = directory + "PPO_{}_{}_{}.pth".format(env_name, random_seed, run_num_pretrained)
     print("save checkpoint path : " + checkpoint_path)
     #####################################################
 
     # initialize a PPO agent
+    torch.cuda.empty_cache()
     ppo_agent = PPO(37, 6, lr_actor, lr_critic, gamma, K_epochs, eps_clip, has_continuous_action_space, action_std)
+    ppo_agent.load(checkpoint_path)
 
     # track total training time
     start_time = datetime.now().replace(microsecond=0)
@@ -200,7 +201,7 @@ def main():
 
     while simulation_app.is_running():
         # run everything in inference mode
-        with torch.inference_mode():
+        with torch.inference_mode(False):
             # select action with policy
             action = ppo_agent.select_action(state)
             ob, reward, terminated, truncated, _ = env.step(torch.tensor(action, device=device))
@@ -222,6 +223,16 @@ def main():
                 rewards_latest += rewards * done.cpu().numpy()
                 rewards = rewards * (1 - done.cpu().numpy())
             
+            # # test update PPO agent
+            # if time_step % 10 == 0:
+            #     print("update..")
+            #     ppo_agent.update()
+
+            # value
+            if time_step % 50 == 0:
+                temp_value = ppo_agent.policy.critic(state)[0]
+                print(f"machine 1 value : {temp_value}")
+
             # update PPO agent
             if time_step % update_timestep == 0:
                 print("update..")

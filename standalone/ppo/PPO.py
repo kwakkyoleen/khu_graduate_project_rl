@@ -99,13 +99,15 @@ class ActorCritic(nn.Module):
         action_logprob = dist.log_prob(action)
         state_val = self.critic(state)
 
-        return action, action_logprob, state_val
+        return action.detach(), action_logprob.detach(), state_val.detach()
     
     def evaluate(self, state, action):
-
+        state = state.to(device).float()
+        action = action.to(device).float()
         if self.has_continuous_action_space:
             action_mean = self.actor(state)
             # action_mean.requires_grad_(True)
+            # print("action_mean grad_fn:", action_mean.grad_fn)
             action_var = self.action_var.expand_as(action_mean)
             cov_mat = torch.diag_embed(action_var).to(device)
             dist = MultivariateNormal(action_mean, cov_mat)
@@ -121,6 +123,7 @@ class ActorCritic(nn.Module):
         action_logprobs = dist.log_prob(action)
         dist_entropy = dist.entropy()
         state_values = self.critic(state)
+        # print("state_values grad_fn:", state_values.grad_fn)
 
         # action_logprobs.requires_grad_(True)
         # dist_entropy.requires_grad_(True)
@@ -193,10 +196,10 @@ class PPO:
     def select_action(self, state):
 
         if self.has_continuous_action_space:
-            
-            state = state.clone().detach().requires_grad_(True)
-            # torch.tensor(state, dtype=torch.float32, device=device)
-            action, action_logprob, state_val = self.policy_old.act(state)
+            with torch.no_grad():
+                state = state.clone().detach()
+                # torch.tensor(state, dtype=torch.float32, device=device)
+                action, action_logprob, state_val = self.policy_old.act(state)
 
             # for i in range(action.size(0)):
             #     self.buffer.states.append(state[i])
@@ -212,9 +215,9 @@ class PPO:
             # return action.detach().cpu().numpy().flatten()
             return action.cpu().numpy()
         else:
-        
-            state = torch.tensor(state, dtype=torch.float32, device=device)
-            action, action_logprob, state_val = self.policy_old.act(state)
+            with torch.no_grad():
+                state = torch.tensor(state, dtype=torch.float32, device=device)
+                action, action_logprob, state_val = self.policy_old.act(state)
 
             # for i in range(action.size(0)):
             #     self.buffer.states.append(state[i])
@@ -286,7 +289,7 @@ class PPO:
                 rewards.insert(0, discounted_reward)
                 
             # Normalizing the rewards
-            rewards = torch.tensor(rewards, dtype=torch.float32, requires_grad=True).to(device)
+            rewards = torch.tensor(rewards, dtype=torch.float32).to(device)
             rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
 
             # convert list to tensor
@@ -295,10 +298,10 @@ class PPO:
             old_logprobs = torch.squeeze(torch.stack(env_logprobs, dim=0)).to(device)
             old_state_values = torch.squeeze(torch.stack(env_state_values, dim=0)).to(device)
 
-            old_states.requires_grad_(True)
-            old_actions.requires_grad_(True)
-            old_logprobs.requires_grad_(True)
-            old_state_values.requires_grad_(True)
+            # old_states.requires_grad_(True)
+            # old_actions.requires_grad_(True)
+            # old_logprobs.requires_grad_(True)
+            # old_state_values.requires_grad_(True)
 
             # calculate advantages
             advantages = rewards - old_state_values
@@ -321,13 +324,9 @@ class PPO:
 
                 # final loss of clipped objective PPO
                 loss = -torch.min(surr1, surr2) + 0.5 * self.MseLoss(state_values, rewards) - 0.01 * dist_entropy
-                
                 # take gradient step
                 self.optimizer.zero_grad()
-                lossmean = loss.mean()
-                lossmean.requires_grad = True
-                # print("loss grad_fn:", lossmean.grad)
-                lossmean.backward()
+                loss.mean().backward()
                 self.optimizer.step()
                 
         # Copy new weights into old policy
