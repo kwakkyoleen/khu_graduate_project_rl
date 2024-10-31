@@ -34,9 +34,9 @@ from ..kinova.gen3lite import MY_GEN3LITE_CFG
 @configclass
 class ObstacleEnvCfg(DirectRLEnvCfg):
     # env
-    decimation = 6  # 랜더링 간격
+    decimation = 4  # 랜더링 간격
     episode_length_s = 15.0  # 에피소드 길이
-    robot_dof_angle_scales = 0.3  # [라디안] 1도는 0.0174라디안임
+    robot_dof_angle_scales = 0.05  # [라디안] 1도는 0.0174라디안임
     num_actions = 6  # 액션의 갯수
     num_observations = 3  # 관찰 갯수
     num_states = 0
@@ -195,11 +195,11 @@ class ObstacleEnv(DirectRLEnv):
         )  # 입력값은 -1에서 1사이로 받고 나중에 스케일링 하는 방식으로 ㄱㄱ
         # target을 쓰는게 맞나 아님 현재 각도를 쓰는게 맞나
         # print(f"action : {actions}")
-        targets = self.robot_dof_targets + self.robot_dof_angle_scales * self.actions
+        # targets = self.robot_dof_targets + self.robot_dof_angle_scales * self.actions
         # print(f"scaled : {self.robot_dof_angle_scales * self.actions}")
-        # targets = (
-        #     self._robot.data.joint_pos + self.robot_dof_angle_scales * self.actions
-        # )
+        targets = (
+            self._robot.data.joint_pos + self.robot_dof_angle_scales * self.actions
+        )
         self.robot_dof_targets[:] = torch.clamp(
             targets, self.robot_dof_lower_limits, self.robot_dof_upper_limits
         )

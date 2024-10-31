@@ -161,7 +161,8 @@ def main():
     # initialize a PPO agent
     torch.cuda.empty_cache()
     ppo_agent = PPO(37, 6, lr_actor, lr_critic, gamma, K_epochs, eps_clip, has_continuous_action_space, action_std)
-    ppo_agent.load(checkpoint_path)
+    if os.path.exists(checkpoint_path):
+        ppo_agent.load(checkpoint_path)
 
     # track total training time
     start_time = datetime.now().replace(microsecond=0)
