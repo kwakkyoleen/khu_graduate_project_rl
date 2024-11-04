@@ -80,7 +80,7 @@ def main():
 
     has_continuous_action_space = True  # continuous action space; else discrete
 
-    max_ep_len = 310                   # max timesteps in one episode
+    max_ep_len = 460                    # max timesteps in one episode
     max_training_timesteps = int(3e6)   # break training loop if timeteps > max_training_timesteps
 
     print_freq = max_ep_len * 10        # print avg reward in the interval (in num timesteps)
@@ -144,7 +144,7 @@ def main():
     #####################################################
 
     ################### checkpointing ###################
-    run_num_pretrained = 1      #### change this to prevent overwriting weights in same env_name folder
+    run_num_pretrained = 2      #### change this to prevent overwriting weights in same env_name folder
 
     directory = "PPO_preTrained"
     if not os.path.exists(directory):

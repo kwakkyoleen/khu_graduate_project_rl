@@ -6,7 +6,7 @@ env_name = "Obstacle-direct-v0"
 
 has_continuous_action_space = True  # continuous action space; else discrete
 
-max_ep_len = 310                   # max timesteps in one episode
+max_ep_len = 460                   # max timesteps in one episode
 max_training_timesteps = int(3e6)   # break training loop if timeteps > max_training_timesteps
 
 print_freq = max_ep_len * 10        # print avg reward in the interval (in num timesteps)
