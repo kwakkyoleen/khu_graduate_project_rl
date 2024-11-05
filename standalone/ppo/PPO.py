@@ -47,35 +47,29 @@ class ActorCritic(nn.Module):
         # actor
         if has_continuous_action_space :
             self.actor = nn.Sequential(
-                            nn.Linear(state_dim, 512),
+                            nn.Linear(state_dim, 128),
                             nn.ReLU(),
-                            nn.Linear(512, 256),
+                            nn.Linear(128, 64),
                             nn.ReLU(),
-                            nn.Linear(256, 256),
-                            nn.ReLU(),
-                            nn.Linear(256, action_dim),
+                            nn.Linear(64, action_dim),
                             nn.Tanh()
                         )
         else:
             self.actor = nn.Sequential(
-                            nn.Linear(state_dim, 512),
+                            nn.Linear(state_dim, 128),
                             nn.ReLU(),
-                            nn.Linear(512, 256),
+                            nn.Linear(126, 64),
                             nn.ReLU(),
-                            nn.Linear(256, 256),
-                            nn.ReLU(),
-                            nn.Linear(256, action_dim),
+                            nn.Linear(64, action_dim),
                             nn.Softmax(dim=-1)
                         )
         # critic
         self.critic = nn.Sequential(
-                        nn.Linear(state_dim, 512),
+                        nn.Linear(state_dim, 128),
                         nn.ReLU(),
-                        nn.Linear(512, 256),
+                        nn.Linear(128, 64),
                         nn.ReLU(),
-                        nn.Linear(256, 256),
-                        nn.ReLU(),
-                        nn.Linear(256, 1)
+                        nn.Linear(64, 1)
                     )
         self.actor = self.actor.to(device)
         self.critic = self.critic.to(device)
