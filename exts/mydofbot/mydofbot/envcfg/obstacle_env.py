@@ -62,7 +62,7 @@ class ObstacleEnvCfg(DirectRLEnvCfg):
     )
 
     # reward scales
-    rew_scale_distance = -8.0
+    rew_scale_distance = -0.5 * decimation
     rew_scale_time = -0.2
     rew_scale_collision = -400.0
     rew_scale_success = 5000.0
