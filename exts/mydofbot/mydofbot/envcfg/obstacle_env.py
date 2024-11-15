@@ -30,6 +30,7 @@ from omni.isaac.lab.sensors import (
 
 from ..kinova.gen3lite import MY_GEN3LITE_CFG
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 @configclass
 class ObstacleEnvCfg(DirectRLEnvCfg):
@@ -235,8 +236,8 @@ class ObstacleEnv(DirectRLEnv):
         # (장애물과 부딛혔으면 rew_scale_collision) +
         # (목표물에 도착했으면 rew_scale_success)
         # 엔드 이펙터와 타겟의 위치
-        robot_ef_pos = self._robot.data.body_pos_w[:, self.end_effector_idx]
-        target_pos = self.scene.rigid_objects["Target_obj"].data.root_pos_w
+        robot_ef_pos = self._robot.data.body_pos_w[:, self.end_effector_idx].clone()
+        target_pos = self.scene.rigid_objects["Target_obj"].data.root_pos_w.clone()
 
         # 접촉 여부 : 일단 norm으로 구했는데 그냥 평균내도 될려나?
         contact_list = torch.sum(self.contact_sensor.data.net_forces_w**2, dim=-1)  # type: ignore
@@ -307,13 +308,45 @@ class ObstacleEnv(DirectRLEnv):
         # 현재 로봇팔 각도 + 카메라로 입력된 rgbd 데이터(다듬어진) + 타겟의 위치
 
         # body랑 root랑 뭔차이지??
-        target_pos = self.scene.rigid_objects["Target_obj"].data.root_pos_w
-        robot_pos = self.scene.articulations["robot"].data.root_pos_w
+        target_pos = self.scene.rigid_objects["Target_obj"].data.root_pos_w.clone()
+        robot_pos = self.scene.articulations["robot"].data.root_pos_w.clone()
 
+        # 타겟 포즈 추출
         target_pos_rel = target_pos - robot_pos
 
-        joint_pos = self._robot.data.joint_pos
+        # 회전 행렬 생성
+        # x, y 좌표 추출
+        x = target_pos_rel[:, 0]
+        y = target_pos_rel[:, 1]
+
+        # z축을 기준으로 회전할 각도 계산
+        theta_z = torch.atan2(y, x)  # (n,) 모양
+
+        # 각 벡터에 대한 회전 행렬 생성
+        cos_theta = torch.cos(theta_z)
+        sin_theta = torch.sin(theta_z)
+
+        # 회전 행렬을 각 벡터에 적용하기 위해 배치로 생성: (n, 3, 3)
+        Rz = torch.zeros((target_pos_rel.shape[0], 3, 3), device=device)
+        Rz[:, 0, 0] = cos_theta
+        Rz[:, 0, 1] = sin_theta
+        Rz[:, 1, 0] = -sin_theta
+        Rz[:, 1, 1] = cos_theta
+        Rz[:, 2, 2] = 1
+
+        # joint, body 포즈 모두 구해서 combined
+        joint_pos = self._robot.data.joint_pos.clone()
+        nt = (-theta_z + 2 * math.pi) % (2 * math.pi) - math.pi
+        # print(f"z : {-nt[0]}, pos : {joint_pos[0][0]}, pos_r : {joint_pos[0][0] + nt[0]}")
+        joint_pos[:, 0] += nt
         ef_pos = self._robot.data.body_pos_w - robot_pos.unsqueeze(1)
+
+        # 회전 행렬 적용
+        ef_pos = torch.matmul(Rz.unsqueeze(1), ef_pos.unsqueeze(-1)).squeeze(-1)
+        # print(ef_pos[0])
+        target_pos_rel = torch.bmm(Rz, target_pos_rel.unsqueeze(2)).squeeze(2)
+        # print(target_pos_rel[0])
+
         ef_pos = ef_pos.flatten(start_dim=1)
         ef_trans = self._robot.data.body_quat_w[:, self.end_effector_idx]
         combined_pos = torch.cat((joint_pos, ef_pos, ef_trans), dim=1)
