@@ -113,9 +113,9 @@ class TargetCfg(RigidObjectCfg):
         visual_material=sim_utils.PreviewSurfaceCfg(
             diffuse_color=(1.0, 0.0, 0.0), metallic=0.2
         ),
-        size=(0.05, 0.05, 0.05),
+        size=(0.01, 0.01, 0.01),
     )
-    init_state = RigidObjectCfg.InitialStateCfg(pos=(0.8, 0.5, 0.5))
+    init_state = RigidObjectCfg.InitialStateCfg(pos=(-0.5, 0.0, 0.5))
 
 
 class ObstacleEnv(DirectRLEnv):
@@ -224,7 +224,16 @@ class ObstacleEnv(DirectRLEnv):
         self._donecount[mask_plus] += 1
         self._donecount[mask_reset] = 0
 
-        terminated = self._donecount > 5
+        cancel = self._donecount > 5
+
+        # 목표 도달시 끝
+        robot_ef_pos = self._robot.data.body_pos_w[:, self.end_effector_idx].clone()
+        target_pos = self.scene.rigid_objects["Target_obj"].data.root_pos_w.clone()
+        target_disparity = target_pos - robot_ef_pos
+        target_distance = torch.sqrt(torch.sum(target_disparity**2, dim=-1))
+        goal_bool = target_distance < 0.03
+
+        terminated = cancel | goal_bool
 
         # terminated = torch.tensor(False)
         # 시간이 너무 많이 지나면 truncated
@@ -293,10 +302,16 @@ class ObstacleEnv(DirectRLEnv):
         self.robot_dof_targets[env_ids] = joint_pos
 
         # target state
-        rand_target_pose = sample_uniform(-0.7, 0.7, (len(env_ids), 7), self.device)
-        rand_target_pose[:, 2] = sample_uniform(0.1, 0.7, (len(env_ids),), self.device)
-        rand_target_pose[:, 0:3] += self._robot.data.root_pos_w[env_ids]
-        self.target_obj.write_root_pose_to_sim(rand_target_pose, env_ids=env_ids)
+        # rand_target_pose = sample_uniform(-0.7, 0.7, (len(env_ids), 7), self.device)
+        # rand_target_pose[:, 2] = sample_uniform(0.1, 0.7, (len(env_ids),), self.device)
+        # rand_target_pose[:, 0:3] += self._robot.data.root_pos_w[env_ids]
+        # self.target_obj.write_root_pose_to_sim(rand_target_pose, env_ids=env_ids)
+        initial_target_pose = torch.zeros((len(env_ids), 7), device=self.device)
+        initial_target_pose[:, 0] = -0.5
+        initial_target_pose[:, 2] = 0.5
+        initial_target_pose[:, 6] = 1
+        initial_target_pose[:, 0:3] += self._robot.data.root_pos_w[env_ids]
+        self.target_obj.write_root_pose_to_sim(initial_target_pose, env_ids=env_ids)
         self.target_obj.write_root_velocity_to_sim(
             torch.zeros_like(self.target_obj.data.root_vel_w[env_ids]), env_ids=env_ids
         )
