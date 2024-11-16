@@ -35,7 +35,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 @configclass
 class ObstacleEnvCfg(DirectRLEnvCfg):
     # env
-    decimation = 4  # 랜더링 간격
+    decimation = 2  # 랜더링 간격
     episode_length_s = 15.0  # 에피소드 길이
     robot_dof_angle_scales = 0.05  # [라디안] 1도는 0.0174라디안임
     num_actions = 6  # 액션의 갯수
@@ -43,6 +43,8 @@ class ObstacleEnvCfg(DirectRLEnvCfg):
     num_states = 0
     num_envs = 128
     env_spacing = 4.0
+    kp = 100
+    kd = 10
 
     # simulation
     sim: SimulationCfg = SimulationCfg(dt=1 / 120, render_interval=decimation)
@@ -63,7 +65,7 @@ class ObstacleEnvCfg(DirectRLEnvCfg):
     )
 
     # reward scales
-    rew_scale_distance = -0.5 * decimation
+    rew_scale_distance = 20
     rew_scale_time = -0.2
     rew_scale_collision = -400.0
     rew_scale_success = 5000.0
@@ -198,20 +200,17 @@ class ObstacleEnv(DirectRLEnv):
         # print(f"action : {actions}")
         # targets = self.robot_dof_targets + self.robot_dof_angle_scales * self.actions
         # print(f"scaled : {self.robot_dof_angle_scales * self.actions}")
-        targets = (
-            self._robot.data.joint_pos + self.robot_dof_angle_scales * self.actions
-        )
-        self.robot_dof_targets[:] = torch.clamp(
-            targets, self.robot_dof_lower_limits, self.robot_dof_upper_limits
-        )
-        # print(self.robot_dof_targets[1])
+        joint_vel = self._robot.data.joint_vel.clone()
+        target_vel = actions.clone()
+        disparity_angle = target_vel.clone() * (self.cfg.decimation / 120)
+        self.target_torque = self.cfg.kp * disparity_angle + self.cfg.kd * (target_vel - joint_vel)
 
         self.target_obj.write_root_velocity_to_sim(
             torch.zeros_like(self.target_obj.data.root_vel_w)
         )
 
     def _apply_action(self) -> None:
-        self._robot.set_joint_position_target(self.robot_dof_targets)
+        self._robot.set_joint_effort_target(self.target_torque)
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
         # 장애물과 부딛히면 terminated
@@ -227,13 +226,14 @@ class ObstacleEnv(DirectRLEnv):
         cancel = self._donecount > 5
 
         # 목표 도달시 끝
-        robot_ef_pos = self._robot.data.body_pos_w[:, self.end_effector_idx].clone()
-        target_pos = self.scene.rigid_objects["Target_obj"].data.root_pos_w.clone()
-        target_disparity = target_pos - robot_ef_pos
-        target_distance = torch.sqrt(torch.sum(target_disparity**2, dim=-1))
-        goal_bool = target_distance < 0.03
+        # robot_ef_pos = self._robot.data.body_pos_w[:, self.end_effector_idx].clone()
+        # target_pos = self.scene.rigid_objects["Target_obj"].data.root_pos_w.clone()
+        # target_disparity = target_pos - robot_ef_pos
+        # target_distance = torch.sqrt(torch.sum(target_disparity**2, dim=-1))
+        # goal_bool = target_distance < 0.03
 
-        terminated = cancel | goal_bool
+        # terminated = cancel | goal_bool
+        terminated = cancel
 
         # terminated = torch.tensor(False)
         # 시간이 너무 많이 지나면 truncated
@@ -262,21 +262,25 @@ class ObstacleEnv(DirectRLEnv):
         contact_list: torch.Tensor,
     ) -> torch.Tensor:
         target_disparity = target_pos - robot_ef_pos
-        target_distance = torch.sqrt(torch.sum(target_disparity**2, dim=-1))
-        if self._target_distance_prev is None :
-            self._target_distance_prev = target_distance
-        target_distance_disparity = self._target_distance_prev - target_distance
+        target_distance = torch.sum(target_disparity**2, dim=-1)
+        # if self._target_distance_prev is None :
+        #     self._target_distance_prev = target_distance
+        # target_distance_disparity = self._target_distance_prev - target_distance
 
         collision_bool = contact_list > 1
         # print("col list : ", collision_list)
         # collision_bool = torch.any(collision_list)
 
-        goal_bool = target_distance < 0.03
+        goal_bool = target_distance < 0.01
 
+        # computed_reward = (
+        #     torch.exp(-self.cfg.rew_scale_distance * target_distance)
+        #     + collision_bool.float() * self.cfg.rew_scale_collision
+        #     + goal_bool.float() * self.cfg.rew_scale_success
+        # )
         computed_reward = (
-            target_distance * self.cfg.rew_scale_distance
+            torch.exp(-self.cfg.rew_scale_distance * target_distance)
             + collision_bool.float() * self.cfg.rew_scale_collision
-            + goal_bool.float() * self.cfg.rew_scale_success
         )
         self._target_distance_prev = target_distance
         # print("col bool : ", collision_bool)
