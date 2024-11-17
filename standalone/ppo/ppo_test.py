@@ -144,7 +144,7 @@ def main():
     #####################################################
 
     ################### checkpointing ###################
-    run_num_pretrained = 6      #### change this to prevent overwriting weights in same env_name folder
+    run_num_pretrained = 8      #### change this to prevent overwriting weights in same env_name folder
 
     directory = "PPO_preTrained"
     if not os.path.exists(directory):
@@ -160,7 +160,7 @@ def main():
 
     # initialize a PPO agent
     torch.cuda.empty_cache()
-    ppo_agent = PPO(37, 6, lr_actor, lr_critic, gamma, K_epochs, eps_clip, has_continuous_action_space, action_std)
+    ppo_agent = PPO(15, 6, lr_actor, lr_critic, gamma, K_epochs, eps_clip, has_continuous_action_space, action_std)
     if os.path.exists(checkpoint_path):
         ppo_agent.load(checkpoint_path)
 
@@ -196,8 +196,7 @@ def main():
 
     ob, r, _, dones, _ = env.step(actions)
     joint = ob["joint"]
-    target = ob["target"]
-    state = torch.cat((joint, target), dim = 1).clone().detach()
+    state = joint.clone().detach()
     current_ep_reward = 0
 
     while simulation_app.is_running():
@@ -207,9 +206,8 @@ def main():
             action = ppo_agent.select_action(state)
             ob, reward, terminated, truncated, _ = env.step(torch.tensor(action, device=device))
             njoint = ob["joint"]
-            ntarget = ob["target"]
             done = terminated | truncated
-            state = torch.cat((njoint, ntarget), dim = 1).detach().clone()
+            state = njoint.detach().clone()
 
             # saving reward and is_terminals
             ppo_agent.buffer.rewards.append(reward.detach().clone())
@@ -231,9 +229,10 @@ def main():
 
             # value
             if time_step % 50 == 0:
-                temp_value = ppo_agent.policy.critic(state)[0]
-                print(f"machine 1 value : {temp_value}")
-
+                temp_value = ppo_agent.policy.critic(state)[3]
+                temp_action = ppo_agent.policy.actor(state)[3]
+                print(f"machine 3 state : {[round(x, 2) for x in state[3].tolist()]}")
+                print(f"machine 3 value : {round(temp_value.item(), 2)}, action : {[round(x, 2) for x in temp_action.tolist()]}, effort : {[round(x, 2) for x in env.target_torque[3].tolist()]}")
             # update PPO agent
             if time_step % update_timestep == 0:
                 print("update..")

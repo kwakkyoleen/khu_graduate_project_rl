@@ -48,27 +48,27 @@ class ActorCritic(nn.Module):
         if has_continuous_action_space :
             self.actor = nn.Sequential(
                             nn.Linear(state_dim, 128),
-                            nn.ReLU(),
+                            nn.Tanh(),
                             nn.Linear(128, 64),
-                            nn.ReLU(),
+                            nn.Tanh(),
                             nn.Linear(64, action_dim),
                             nn.Tanh()
                         )
         else:
             self.actor = nn.Sequential(
                             nn.Linear(state_dim, 128),
-                            nn.ReLU(),
+                            nn.Tanh(),
                             nn.Linear(126, 64),
-                            nn.ReLU(),
+                            nn.Tanh(),
                             nn.Linear(64, action_dim),
                             nn.Softmax(dim=-1)
                         )
         # critic
         self.critic = nn.Sequential(
                         nn.Linear(state_dim, 128),
-                        nn.ReLU(),
+                        nn.Tanh(),
                         nn.Linear(128, 64),
-                        nn.ReLU(),
+                        nn.Tanh(),
                         nn.Linear(64, 1)
                     )
         self.actor = self.actor.to(device)
@@ -290,7 +290,7 @@ class PPO:
                 
             # Normalizing the rewards
             rewards = torch.tensor(rewards, dtype=torch.float32).to(device)
-            rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
+            # rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
 
             # convert list to tensor
             old_states = torch.squeeze(torch.stack(env_states, dim=0)).to(device)

@@ -43,8 +43,8 @@ class ObstacleEnvCfg(DirectRLEnvCfg):
     num_states = 0
     num_envs = 128
     env_spacing = 4.0
-    kp = 100
-    kd = 10
+    kp = 20
+    kd = 1
 
     # simulation
     sim: SimulationCfg = SimulationCfg(dt=1 / 120, render_interval=decimation)
@@ -117,7 +117,7 @@ class TargetCfg(RigidObjectCfg):
         ),
         size=(0.01, 0.01, 0.01),
     )
-    init_state = RigidObjectCfg.InitialStateCfg(pos=(-0.5, 0.0, 0.5))
+    init_state = RigidObjectCfg.InitialStateCfg(pos=(-0.43, 0.0, 0.3))
 
 
 class ObstacleEnv(DirectRLEnv):
@@ -202,7 +202,7 @@ class ObstacleEnv(DirectRLEnv):
         # print(f"scaled : {self.robot_dof_angle_scales * self.actions}")
         joint_vel = self._robot.data.joint_vel.clone()
         target_vel = actions.clone()
-        disparity_angle = target_vel.clone() * (self.cfg.decimation / 120)
+        disparity_angle = target_vel.clone()  # * (self.cfg.decimation / 120)
         self.target_torque = self.cfg.kp * disparity_angle + self.cfg.kd * (target_vel - joint_vel)
 
         self.target_obj.write_root_velocity_to_sim(
@@ -326,52 +326,16 @@ class ObstacleEnv(DirectRLEnv):
     def _get_observations(self) -> dict:
         # 현재 로봇팔 각도 + 카메라로 입력된 rgbd 데이터(다듬어진) + 타겟의 위치
 
-        # body랑 root랑 뭔차이지??
+        robot_ef_pos = self._robot.data.body_pos_w[:, self.end_effector_idx].clone()
         target_pos = self.scene.rigid_objects["Target_obj"].data.root_pos_w.clone()
-        robot_pos = self.scene.articulations["robot"].data.root_pos_w.clone()
 
-        # 타겟 포즈 추출
-        target_pos_rel = target_pos - robot_pos
-
-        # 회전 행렬 생성
-        # x, y 좌표 추출
-        x = target_pos_rel[:, 0]
-        y = target_pos_rel[:, 1]
-
-        # z축을 기준으로 회전할 각도 계산
-        theta_z = torch.atan2(y, x)  # (n,) 모양
-
-        # 각 벡터에 대한 회전 행렬 생성
-        cos_theta = torch.cos(theta_z)
-        sin_theta = torch.sin(theta_z)
-
-        # 회전 행렬을 각 벡터에 적용하기 위해 배치로 생성: (n, 3, 3)
-        Rz = torch.zeros((target_pos_rel.shape[0], 3, 3), device=device)
-        Rz[:, 0, 0] = cos_theta
-        Rz[:, 0, 1] = sin_theta
-        Rz[:, 1, 0] = -sin_theta
-        Rz[:, 1, 1] = cos_theta
-        Rz[:, 2, 2] = 1
-
-        # joint, body 포즈 모두 구해서 combined
+        pos_disparity = target_pos - robot_ef_pos
         joint_pos = self._robot.data.joint_pos.clone()
-        nt = (-theta_z + 2 * math.pi) % (2 * math.pi) - math.pi
-        # print(f"z : {-nt[0]}, pos : {joint_pos[0][0]}, pos_r : {joint_pos[0][0] + nt[0]}")
-        joint_pos[:, 0] += nt
-        ef_pos = self._robot.data.body_pos_w - robot_pos.unsqueeze(1)
+        joint_vel = self._robot.data.joint_vel.clone()
 
-        # 회전 행렬 적용
-        ef_pos = torch.matmul(Rz.unsqueeze(1), ef_pos.unsqueeze(-1)).squeeze(-1)
-        # print(ef_pos[0])
-        target_pos_rel = torch.bmm(Rz, target_pos_rel.unsqueeze(2)).squeeze(2)
-        # print(target_pos_rel[0])
-
-        ef_pos = ef_pos.flatten(start_dim=1)
-        ef_trans = self._robot.data.body_quat_w[:, self.end_effector_idx]
-        combined_pos = torch.cat((joint_pos, ef_pos, ef_trans), dim=1)
+        combined_pos = torch.cat((pos_disparity, joint_pos, joint_vel), dim=1)
 
         return {
             # "policy": torch.tensor([]),
             "joint": combined_pos,
-            "target": target_pos_rel,
         }
