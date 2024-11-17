@@ -72,6 +72,7 @@ class ObstacleEnvCfg(DirectRLEnvCfg):
 
     # angle scale
     angle_scale_factor = 0.06
+    vel_scale_factor = 60
 
 
 # @configclass
@@ -193,24 +194,28 @@ class ObstacleEnv(DirectRLEnv):
         light_cfg.func("/World/Light", light_cfg)
 
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
-        self.actions = actions.clone().clamp(
-            -1.0, 1.0
-        )  # 입력값은 -1에서 1사이로 받고 나중에 스케일링 하는 방식으로 ㄱㄱ
+        # self.actions = actions.clone().clamp(
+        #     -1.0, 1.0
+        # )  # 입력값은 -1에서 1사이로 받고 나중에 스케일링 하는 방식으로 ㄱㄱ
         # target을 쓰는게 맞나 아님 현재 각도를 쓰는게 맞나
         # print(f"action : {actions}")
         # targets = self.robot_dof_targets + self.robot_dof_angle_scales * self.actions
         # print(f"scaled : {self.robot_dof_angle_scales * self.actions}")
-        joint_vel = self._robot.data.joint_vel.clone()
-        target_vel = actions.clone()
-        disparity_angle = target_vel.clone()  # * (self.cfg.decimation / 120)
-        self.target_torque = self.cfg.kp * disparity_angle + self.cfg.kd * (target_vel - joint_vel)
+        # joint_vel = self._robot.data.joint_vel.clone()
+        # target_vel = actions.clone()
+        # disparity_angle = target_vel.clone()  # * (self.cfg.decimation / 120)
+        # self.target_torque = self.cfg.kp * disparity_angle + self.cfg.kd * (target_vel - joint_vel)
+        self.target_vel = actions.clone()  # * self.cfg.vel_scale_factor
+        self._robot.data.joint_pos_target = self._robot.data.joint_pos.clone() + actions.clone() * (self.cfg.decimation / 120)
+        self.temp_target_pos = self._robot.data.joint_pos_target  # 확인하려고
 
         self.target_obj.write_root_velocity_to_sim(
             torch.zeros_like(self.target_obj.data.root_vel_w)
         )
 
     def _apply_action(self) -> None:
-        self._robot.set_joint_effort_target(self.target_torque)
+        # self._robot.set_joint_effort_target(self.target_torque)
+        self._robot.set_joint_velocity_target(self.target_vel)
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
         # 장애물과 부딛히면 terminated
