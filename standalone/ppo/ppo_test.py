@@ -144,7 +144,7 @@ def main():
     #####################################################
 
     ################### checkpointing ###################
-    run_num_pretrained = 9      #### change this to prevent overwriting weights in same env_name folder
+    run_num_pretrained = 10     #### change this to prevent overwriting weights in same env_name folder
 
     directory = "PPO_preTrained"
     if not os.path.exists(directory):
@@ -233,8 +233,9 @@ def main():
             if time_step % 50 == 0:
                 temp_value = ppo_agent.policy.critic(state)[3]
                 temp_action = ppo_agent.policy.actor(state)[3]
-                print(f"vel_target : {[round(x, 2) for x in env.temp_target_pos[0].tolist()]}")
-                print(f"machine 3 state : {[round(x, 2) for x in state[3].tolist()]}")
+                # print(f"vel_target : {[round(x, 2) for x in env.temp_target_pos[0].tolist()]}")
+                # print(f"machine 3 state : {[round(x, 2) for x in state[3].tolist()]}, precision : {env.precision}")
+                print(f"grade : {env.unwrapped.grade}, precision : {env.unwrapped.precision}")
                 print(f"machine 3 value : {round(temp_value.item(), 2)}, action : {[round(x, 2) for x in temp_action.tolist()]}")
             # update PPO agent
             if time_step % update_timestep == 0:

@@ -139,13 +139,13 @@ def make_rand_val(grade : int, env_ids: torch.Tensor) -> torch.Tensor:
         v1 = 0.1
         v2 = 3.14 / 2
     elif grade == 4:
-        v1 = 0.1
+        v1 = 0.1  # 내원 반지름 최대 2까지 증가
         v2 = 3.14
     r = torch.rand(n) * v1 + v1  # r2
     t1 = torch.rand(n) * v2 - (v2 / 2)  # theta1
     t2 = torch.rand(n) * v3 - (v3 / 2)  # theta2
     br = 0.3
-    bz = 0.23
+    bz = 0.3
 
     col_0 = torch.cos(t1) * (r * torch.cos(t2) - br)
     col_1 = torch.sin(t1) * (r * torch.cos(t2) + br)
@@ -180,6 +180,9 @@ class ObstacleEnv(DirectRLEnv):
 
         self.end_effector_idx = self._robot.find_bodies("END_EFFECTOR")[0][0]
         self._target_distance_prev = None
+
+        self.grade = 0
+        self.precision = 0
 
     def _setup_scene(self):
         self._robot = Articulation(self.cfg.robot_cfg)
@@ -265,18 +268,28 @@ class ObstacleEnv(DirectRLEnv):
         cancel = self._donecount > 5
 
         # 목표 도달시 끝
-        # robot_ef_pos = self._robot.data.body_pos_w[:, self.end_effector_idx].clone()
-        # target_pos = self.scene.rigid_objects["Target_obj"].data.root_pos_w.clone()
-        # target_disparity = target_pos - robot_ef_pos
-        # target_distance = torch.sqrt(torch.sum(target_disparity**2, dim=-1))
-        # goal_bool = target_distance < 0.03
+        robot_ef_pos = self._robot.data.body_pos_w[:, self.end_effector_idx].clone()
+        target_pos = self.scene.rigid_objects["Target_obj"].data.root_pos_w.clone()
+        target_disparity = target_pos - robot_ef_pos
+        target_distance = torch.sqrt(torch.sum(target_disparity**2, dim=-1))
+        goal_bool = target_distance < 0.01
 
-        # terminated = cancel | goal_bool
-        terminated = cancel
+        # 목표까지 도달하면 바로 학습이 종료되게 설정해 놓았는데 이건 추후 분석이 필요할듯
+        terminated = cancel | goal_bool
+        # terminated = cancel
 
         # terminated = torch.tensor(False)
         # 시간이 너무 많이 지나면 truncated
         truncated = self.episode_length_buf >= self.max_episode_length - 1
+        if goal_bool[0] is True:
+            self.precision = 0.9 * self.precision + 0.1
+
+        if truncated[0] is True:
+            self.precision = 0.9 * self.precision
+
+        if self.precision > 0.8 and self.grade < 4 :
+            self.precision = 0
+            self.grade += 1
         return terminated, truncated
 
     def _get_rewards(self) -> torch.Tensor:
@@ -350,11 +363,18 @@ class ObstacleEnv(DirectRLEnv):
         # rand_target_pose[:, 2] = sample_uniform(0.1, 0.7, (len(env_ids),), self.device)
         # rand_target_pose[:, 0:3] += self._robot.data.root_pos_w[env_ids]
         # self.target_obj.write_root_pose_to_sim(rand_target_pose, env_ids=env_ids)
-        initial_target_pose = torch.zeros((len(env_ids), 7), device=self.device)
-        initial_target_pose[:, 0] = -0.5
-        initial_target_pose[:, 2] = 0.5
-        initial_target_pose[:, 6] = 1
-        initial_target_pose[:, 0:3] += self._robot.data.root_pos_w[env_ids]
+        if env_ids is not None:
+            rand_vals = make_rand_val(self.grade, env_ids).to(device=self.device) + self._robot.data.root_pos_w[env_ids]
+            qurt = torch.zeros((env_ids.shape[0], 4), device=self.device)
+            qurt[:, 3] = 1
+            initial_target_pose = torch.cat((rand_vals, qurt), dim=1)
+            # print(initial_target_pose[0])
+        else :
+            initial_target_pose = torch.zeros((len(env_ids), 7), device=self.device)
+            initial_target_pose[:, 0] = -0.5
+            initial_target_pose[:, 2] = 0.5
+            initial_target_pose[:, 6] = 1
+            initial_target_pose[:, 0:3] += self._robot.data.root_pos_w[env_ids]
         self.target_obj.write_root_pose_to_sim(initial_target_pose, env_ids=env_ids)
         self.target_obj.write_root_velocity_to_sim(
             torch.zeros_like(self.target_obj.data.root_vel_w[env_ids]), env_ids=env_ids
