@@ -121,6 +121,40 @@ class TargetCfg(RigidObjectCfg):
     init_state = RigidObjectCfg.InitialStateCfg(pos=(-0.43, 0.0, 0.3))
 
 
+def make_rand_val(grade : int, env_ids: torch.Tensor) -> torch.Tensor:
+    n = env_ids.shape[0]
+    v1 = 0.1
+    v2 = 3.14 / 4
+    v3 = 3.14 * 2
+    if grade == 0:
+        v1 = 0.05
+        v2 = 3.14 / 4
+    elif grade == 1:
+        v1 = 0.05
+        v2 = 3.14 / 2
+    elif grade == 2:
+        v1 = 0.075
+        v2 = 3.14 / 2
+    elif grade == 3:
+        v1 = 0.1
+        v2 = 3.14 / 2
+    elif grade == 4:
+        v1 = 0.1
+        v2 = 3.14
+    r = torch.rand(n) * v1 + v1  # r2
+    t1 = torch.rand(n) * v2 - (v2 / 2)  # theta1
+    t2 = torch.rand(n) * v3 - (v3 / 2)  # theta2
+    br = 0.3
+    bz = 0.23
+
+    col_0 = torch.cos(t1) * (r * torch.cos(t2) - br)
+    col_1 = torch.sin(t1) * (r * torch.cos(t2) + br)
+    col_2 = r * torch.sin(t2) + bz
+
+    result = torch.stack((col_0, col_1, col_2), dim=1)
+    return result
+
+
 class ObstacleEnv(DirectRLEnv):
     cfg: ObstacleEnvCfg
 
