@@ -206,7 +206,7 @@ class ObstacleEnv(DirectRLEnv):
         # disparity_angle = target_vel.clone()  # * (self.cfg.decimation / 120)
         # self.target_torque = self.cfg.kp * disparity_angle + self.cfg.kd * (target_vel - joint_vel)
         self.target_vel = actions.clone()  # * self.cfg.vel_scale_factor
-        self._robot.data.joint_pos_target = self._robot.data.joint_pos.clone() + actions.clone() * (self.cfg.decimation / 120)
+        self._robot.data.joint_pos_target = self._robot.data.joint_pos.clone() + actions.clone() * (5 * self.cfg.decimation / 120)
         self.temp_target_pos = self._robot.data.joint_pos_target  # 확인하려고
 
         self.target_obj.write_root_velocity_to_sim(
@@ -307,6 +307,7 @@ class ObstacleEnv(DirectRLEnv):
         )
         joint_vel = torch.zeros_like(joint_pos)
         self._robot.set_joint_position_target(joint_pos, env_ids=env_ids)
+        self._robot.set_joint_velocity_target(joint_vel, env_ids=env_ids)
         self._robot.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
         self.robot_dof_targets[env_ids] = joint_pos
 

@@ -102,12 +102,8 @@ class ActorCritic(nn.Module):
         return action.detach(), action_logprob.detach(), state_val.detach()
     
     def evaluate(self, state, action):
-        state = state.to(device).float()
-        action = action.to(device).float()
         if self.has_continuous_action_space:
             action_mean = self.actor(state)
-            # action_mean.requires_grad_(True)
-            # print("action_mean grad_fn:", action_mean.grad_fn)
             action_var = self.action_var.expand_as(action_mean)
             cov_mat = torch.diag_embed(action_var).to(device)
             dist = MultivariateNormal(action_mean, cov_mat)
@@ -117,27 +113,11 @@ class ActorCritic(nn.Module):
                 action = action.reshape(-1, self.action_dim)
         else:
             action_probs = self.actor(state)
-            # action_probs.requires_grad_(True)
             dist = Categorical(action_probs)
 
         action_logprobs = dist.log_prob(action)
         dist_entropy = dist.entropy()
         state_values = self.critic(state)
-        # print("state_values grad_fn:", state_values.grad_fn)
-
-        # action_logprobs.requires_grad_(True)
-        # dist_entropy.requires_grad_(True)
-        # state_values.requires_grad_(True)
-
-        # grad_fn 확인용 출력
-        # print("action r:", action.requires_grad)
-        # print("logprobs r:", action_logprobs.requires_grad)
-        # print("state_values r:", state_values.requires_grad)
-        # print("dist_entropy r:", dist_entropy.requires_grad)
-        # print("action grad_fn:", action.grad)
-        # print("logprobs grad_fn:", action_logprobs.grad)
-        # print("state_values grad_fn:", state_values.grad)
-        # print("dist_entropy grad_fn:", dist_entropy.grad)
         
         return action_logprobs, state_values, dist_entropy
 
@@ -304,7 +284,7 @@ class PPO:
             # old_state_values.requires_grad_(True)
 
             # calculate advantages
-            advantages = rewards - old_state_values
+            advantages = rewards.detach() - old_state_values.detach()
 
             # Optimize policy for K epochs
             for _ in range(self.K_epochs):
@@ -316,7 +296,7 @@ class PPO:
                 state_values = torch.squeeze(state_values)
                 
                 # Finding the ratio (pi_theta / pi_theta__old)
-                ratios = torch.exp(logprobs - old_logprobs)
+                ratios = torch.exp(logprobs - old_logprobs.detach())
 
                 # Finding Surrogate Loss  
                 surr1 = ratios * advantages
