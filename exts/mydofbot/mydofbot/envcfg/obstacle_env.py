@@ -69,6 +69,7 @@ class ObstacleEnvCfg(DirectRLEnvCfg):
     rew_scale_time = -0.2
     rew_scale_collision = -400.0
     rew_scale_success = 5000.0
+    rew_scale_acc = 0.002
 
     # angle scale
     angle_scale_factor = 0.06
@@ -184,6 +185,9 @@ class ObstacleEnv(DirectRLEnv):
         self.grade = 0
         self.precision = 0
 
+        self.prev_joint_vel = torch.zeros_like(self._robot.data.joint_vel, device=self.device)
+        self.target_object_pos = torch.zeros_like(self.scene.rigid_objects["Target_obj"].data.root_pos_w)
+
     def _setup_scene(self):
         self._robot = Articulation(self.cfg.robot_cfg)
 
@@ -269,7 +273,7 @@ class ObstacleEnv(DirectRLEnv):
 
         # 목표 도달시 끝
         robot_ef_pos = self._robot.data.body_pos_w[:, self.end_effector_idx].clone()
-        target_pos = self.scene.rigid_objects["Target_obj"].data.root_pos_w.clone()
+        target_pos = self.target_object_pos.clone()
         target_disparity = target_pos - robot_ef_pos
         target_distance = torch.sqrt(torch.sum(target_disparity**2, dim=-1))
         goal_bool = target_distance < 0.01
@@ -298,7 +302,7 @@ class ObstacleEnv(DirectRLEnv):
         # (목표물에 도착했으면 rew_scale_success)
         # 엔드 이펙터와 타겟의 위치
         robot_ef_pos = self._robot.data.body_pos_w[:, self.end_effector_idx].clone()
-        target_pos = self.scene.rigid_objects["Target_obj"].data.root_pos_w.clone()
+        target_pos = self.target_object_pos.clone()
 
         # 접촉 여부 : 일단 norm으로 구했는데 그냥 평균내도 될려나?
         contact_list = torch.sum(self.contact_sensor.data.net_forces_w**2, dim=-1)  # type: ignore
@@ -325,17 +329,19 @@ class ObstacleEnv(DirectRLEnv):
 
         goal_bool = target_distance < 0.01
 
+        # 각 가속도 평가
+        now_joint_vel = self._robot.data.joint_vel.clone()
+        joint_acc = torch.sum(torch.abs((now_joint_vel - self.prev_joint_vel) / (self.cfg.decimation / 120)))
+        self.prev_joint_vel = self._robot.data.joint_vel.clone()
+
         # computed_reward = (
         #     torch.exp(-self.cfg.rew_scale_distance * target_distance)
         #     + collision_bool.float() * self.cfg.rew_scale_collision
         #     + goal_bool.float() * self.cfg.rew_scale_success
         # )
-        # computed_reward = (
-        #     torch.exp(-self.cfg.rew_scale_distance * target_distance)
-        #     + collision_bool.float() * self.cfg.rew_scale_collision
-        # )
         computed_reward = (
             torch.exp(-self.cfg.rew_scale_distance * target_distance)
+            - joint_acc * self.cfg.rew_scale_acc
         )
         self._target_distance_prev = target_distance
         # print("col bool : ", collision_bool)
@@ -382,6 +388,10 @@ class ObstacleEnv(DirectRLEnv):
         self.target_obj.write_root_velocity_to_sim(
             torch.zeros_like(self.target_obj.data.root_vel_w[env_ids]), env_ids=env_ids
         )
+        self.target_object_pos = initial_target_pose[:, 0:3].clone()
+
+        # prev vel 초기화
+        self.prev_joint_vel[env_ids] = torch.zeros_like(self._robot.data.joint_vel[env_ids])
 
         # count reset
         self._donecount[env_ids] = 0
@@ -390,7 +400,7 @@ class ObstacleEnv(DirectRLEnv):
         # 현재 로봇팔 각도 + 카메라로 입력된 rgbd 데이터(다듬어진) + 타겟의 위치
 
         robot_ef_pos = self._robot.data.body_pos_w[:, self.end_effector_idx].clone()
-        target_pos = self.scene.rigid_objects["Target_obj"].data.root_pos_w.clone()
+        target_pos = self.target_object_pos.clone()
 
         pos_disparity = target_pos - robot_ef_pos
         joint_pos = self._robot.data.joint_pos.clone()
