@@ -330,9 +330,12 @@ class ObstacleEnv(DirectRLEnv):
         #     + collision_bool.float() * self.cfg.rew_scale_collision
         #     + goal_bool.float() * self.cfg.rew_scale_success
         # )
+        # computed_reward = (
+        #     torch.exp(-self.cfg.rew_scale_distance * target_distance)
+        #     + collision_bool.float() * self.cfg.rew_scale_collision
+        # )
         computed_reward = (
             torch.exp(-self.cfg.rew_scale_distance * target_distance)
-            + collision_bool.float() * self.cfg.rew_scale_collision
         )
         self._target_distance_prev = target_distance
         # print("col bool : ", collision_bool)
