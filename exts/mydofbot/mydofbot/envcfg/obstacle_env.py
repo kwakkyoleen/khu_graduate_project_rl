@@ -69,10 +69,10 @@ class ObstacleEnvCfg(DirectRLEnvCfg):
     rew_scale_time = -0.2
     rew_scale_collision = -400.0
     rew_scale_success = 5000.0
-    rew_scale_acc = 0.002
+    rew_scale_acc = 0.005
 
     # angle scale
-    angle_scale_factor = 0.06
+    angle_scale_factor = 0.1
     vel_scale_factor = 60
 
 
@@ -260,16 +260,16 @@ class ObstacleEnv(DirectRLEnv):
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
         # 장애물과 부딛히면 terminated
-        contact_list = torch.sum(self.contact_sensor.data.net_forces_w**2, dim=-1)  # type: ignore
-        contact_list = torch.sqrt(contact_list)
-        contact_list, _ = torch.max(contact_list, dim=1)
+        # contact_list = torch.sum(self.contact_sensor.data.net_forces_w**2, dim=-1)  # type: ignore
+        # contact_list = torch.sqrt(contact_list)
+        # contact_list, _ = torch.max(contact_list, dim=1)
 
-        mask_plus = contact_list > 1
-        mask_reset = contact_list <= 1
-        self._donecount[mask_plus] += 1
-        self._donecount[mask_reset] = 0
+        # mask_plus = contact_list > 1
+        # mask_reset = contact_list <= 1
+        # self._donecount[mask_plus] += 1
+        # self._donecount[mask_reset] = 0
 
-        cancel = self._donecount > 5
+        # cancel = self._donecount > 5
 
         # 목표 도달시 끝
         robot_ef_pos = self._robot.data.body_pos_w[:, self.end_effector_idx].clone()
@@ -279,8 +279,9 @@ class ObstacleEnv(DirectRLEnv):
         goal_bool = target_distance < 0.01
 
         # 목표까지 도달하면 바로 학습이 종료되게 설정해 놓았는데 이건 추후 분석이 필요할듯
-        terminated = cancel | goal_bool
+        # terminated = cancel | goal_bool
         # terminated = cancel
+        terminated = goal_bool
 
         # terminated = torch.tensor(False)
         # 시간이 너무 많이 지나면 truncated
@@ -331,7 +332,7 @@ class ObstacleEnv(DirectRLEnv):
 
         # 각 가속도 평가
         now_joint_vel = self._robot.data.joint_vel.clone()
-        joint_acc = torch.sum(torch.abs((now_joint_vel - self.prev_joint_vel) / (self.cfg.decimation / 120)))
+        joint_acc = torch.mean(torch.abs((now_joint_vel - self.prev_joint_vel) / (self.cfg.decimation / 120)))
         self.prev_joint_vel = self._robot.data.joint_vel.clone()
 
         # computed_reward = (
@@ -377,6 +378,7 @@ class ObstacleEnv(DirectRLEnv):
             qurt = torch.zeros((env_ids.shape[0], 4), device=self.device)
             qurt[:, 3] = 1
             initial_target_pose = torch.cat((rand_vals, qurt), dim=1)
+            self.target_object_pos[env_ids] = initial_target_pose[:, 0:3].clone()
             # print(initial_target_pose[0])
         else :
             initial_target_pose = torch.zeros((len(env_ids), 7), device=self.device)
@@ -388,7 +390,6 @@ class ObstacleEnv(DirectRLEnv):
         self.target_obj.write_root_velocity_to_sim(
             torch.zeros_like(self.target_obj.data.root_vel_w[env_ids]), env_ids=env_ids
         )
-        self.target_object_pos = initial_target_pose[:, 0:3].clone()
 
         # prev vel 초기화
         self.prev_joint_vel[env_ids] = torch.zeros_like(self._robot.data.joint_vel[env_ids])
