@@ -144,7 +144,7 @@ def make_rand_val(grade : int, env_ids: torch.Tensor) -> torch.Tensor:
     r = torch.rand(n) * v1 + v1  # r2
     t1 = torch.rand(n) * v2 - (v2 / 2)  # theta1
     t2 = torch.rand(n) * v3 - (v3 / 2)  # theta2
-    br = 0.3
+    br = 0.37
     bz = 0.3
 
     col_0 = torch.cos(t1) * (r * torch.cos(t2) - br)
