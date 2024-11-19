@@ -185,6 +185,7 @@ class ObstacleEnv(DirectRLEnv):
         self.grade = 0
         self.precision = 0
 
+        self.now_joint_vel = torch.zeros_like(self._robot.data.joint_vel, device=self.device)
         self.prev_joint_vel = torch.zeros_like(self._robot.data.joint_vel, device=self.device)
         self.target_object_pos = torch.zeros_like(self.scene.rigid_objects["Target_obj"].data.root_pos_w)
 
@@ -247,6 +248,7 @@ class ObstacleEnv(DirectRLEnv):
         # disparity_angle = target_vel.clone()  # * (self.cfg.decimation / 120)
         # self.target_torque = self.cfg.kp * disparity_angle + self.cfg.kd * (target_vel - joint_vel)
         self.target_vel = actions.clone()  # * self.cfg.vel_scale_factor
+        self.now_joint_vel = actions.clone()
         self._robot.data.joint_pos_target = self._robot.data.joint_pos.clone() + actions.clone() * (5 * self.cfg.decimation / 120)
         self.temp_target_pos = self._robot.data.joint_pos_target  # 확인하려고
 
@@ -331,9 +333,9 @@ class ObstacleEnv(DirectRLEnv):
         goal_bool = target_distance < 0.01
 
         # 각 가속도 평가
-        now_joint_vel = self._robot.data.joint_vel.clone()
+        now_joint_vel = self.now_joint_vel.clone()
         joint_acc = torch.mean(torch.abs((now_joint_vel - self.prev_joint_vel) / (self.cfg.decimation / 120)))
-        self.prev_joint_vel = self._robot.data.joint_vel.clone()
+        self.prev_joint_vel = self.now_joint_vel
 
         # computed_reward = (
         #     torch.exp(-self.cfg.rew_scale_distance * target_distance)
