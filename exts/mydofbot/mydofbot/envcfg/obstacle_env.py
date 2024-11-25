@@ -278,6 +278,7 @@ class ObstacleEnv(DirectRLEnv):
         target_pos = self.target_object_pos.clone()
         target_disparity = target_pos - robot_ef_pos
         target_distance = torch.sqrt(torch.sum(target_disparity**2, dim=-1))
+        self.target_distance = target_distance
         goal_bool = target_distance < 0.01
 
         # 목표까지 도달하면 바로 학습이 종료되게 설정해 놓았는데 이건 추후 분석이 필요할듯

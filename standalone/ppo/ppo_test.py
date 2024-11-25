@@ -138,6 +138,8 @@ def main():
 
     #### create new log file for each run
     log_f_name = log_dir + '/PPO_' + env_name + "_log_" + str(run_num) + ".csv"
+    acc_f_name = log_dir + '/PPO_' + env_name + "_acc_" + str(run_num) + ".csv"
+    act_f_name = log_dir + '/PPO_' + env_name + "_act_" + str(run_num) + ".csv"
 
     print("current logging run number for " + env_name + " : ", run_num)
     print("logging at : " + log_f_name)
@@ -172,7 +174,11 @@ def main():
 
     # logging file
     log_f = open(log_f_name, "w+")
+    # acc_f = open(acc_f_name, "w+")
+    # act_f = open(act_f_name, "w+")
     log_f.write('episode,timestep,reward\n')
+    # acc_f.write('timestep,acc\n')
+    # act_f.write('timestep,action\n')
 
     # printing and logging variables
     print_running_reward = 0
@@ -218,6 +224,13 @@ def main():
             time_step += 1
             rewards += reward.cpu().numpy()
             current_ep_reward += reward.cpu().numpy()[0]
+
+            #logging
+            # temp_action = ppo_agent.policy.actor(state)[3]
+            # acc_f.write('{},{}\n'.format(time_step, round(env.unwrapped.target_distance[3].item(), 4)))
+            # acc_f.flush()
+            # act_f.write('{},{}\n'.format(time_step, [round(x, 4) for x in temp_action.tolist()]))
+            # act_f.flush()
 
             if np.any(done.cpu().numpy()):
                 rewards_latest = rewards_latest * (1 - done.cpu().numpy())
