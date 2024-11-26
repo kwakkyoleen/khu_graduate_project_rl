@@ -36,7 +36,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 class ObstacleEnvCfg(DirectRLEnvCfg):
     # env
     decimation = 2  # 랜더링 간격
-    episode_length_s = 15.0  # 에피소드 길이
+    episode_length_s = 8.0  # 에피소드 길이
     robot_dof_angle_scales = 0.05  # [라디안] 1도는 0.0174라디안임
     num_actions = 6  # 액션의 갯수
     num_observations = 3  # 관찰 갯수
@@ -69,7 +69,7 @@ class ObstacleEnvCfg(DirectRLEnvCfg):
     rew_scale_time = -0.2
     rew_scale_collision = -400.0
     rew_scale_success = 5000.0
-    rew_scale_acc = 0.005
+    rew_scale_acc = 0.009
 
     # angle scale
     angle_scale_factor = 0.1
@@ -183,11 +183,13 @@ class ObstacleEnv(DirectRLEnv):
         self._target_distance_prev = None
 
         self.grade = 0
-        self.precision = 0
+        self.precision = 100
 
         self.now_joint_vel = torch.zeros_like(self._robot.data.joint_vel, device=self.device)
         self.prev_joint_vel = torch.zeros_like(self._robot.data.joint_vel, device=self.device)
         self.target_object_pos = torch.zeros_like(self.scene.rigid_objects["Target_obj"].data.root_pos_w)
+
+        self.min_target_distance = torch.full((self.num_envs,), fill_value=100, device=self.device, dtype=torch.float)
 
     def _setup_scene(self):
         self._robot = Articulation(self.cfg.robot_cfg)
@@ -249,7 +251,6 @@ class ObstacleEnv(DirectRLEnv):
         # self.target_torque = self.cfg.kp * disparity_angle + self.cfg.kd * (target_vel - joint_vel)
         self.target_vel = actions.clone()  # * self.cfg.vel_scale_factor
         self.now_joint_vel = actions.clone()
-        self._robot.data.joint_pos_target = self._robot.data.joint_pos.clone() + actions.clone() * (5 * self.cfg.decimation / 120)
         self.temp_target_pos = self._robot.data.joint_pos_target  # 확인하려고
 
         self.target_obj.write_root_velocity_to_sim(
@@ -259,6 +260,7 @@ class ObstacleEnv(DirectRLEnv):
     def _apply_action(self) -> None:
         # self._robot.set_joint_effort_target(self.target_torque)
         self._robot.set_joint_velocity_target(self.target_vel)
+        self._robot.set_joint_position_target(self._robot.data.joint_pos.clone() + self.target_vel.clone() * (5 * self.cfg.decimation / 120))
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
         # 장애물과 부딛히면 terminated
@@ -284,20 +286,18 @@ class ObstacleEnv(DirectRLEnv):
         # 목표까지 도달하면 바로 학습이 종료되게 설정해 놓았는데 이건 추후 분석이 필요할듯
         # terminated = cancel | goal_bool
         # terminated = cancel
-        terminated = goal_bool
+        terminated = torch.zeros_like(goal_bool, dtype=torch.bool)
+        self.min_target_distance = torch.min(self.min_target_distance, target_distance)
 
         # terminated = torch.tensor(False)
         # 시간이 너무 많이 지나면 truncated
         truncated = self.episode_length_buf >= self.max_episode_length - 1
-        if goal_bool[0] is True:
-            self.precision = 0.9 * self.precision + 0.1
+        # if target_distance[0] < 0.01:
+        #     self.precision = 0.9 * self.precision + 0.1
 
-        if truncated[0] is True:
-            self.precision = 0.9 * self.precision
+        # if truncated[0] is True:
+        #     self.precision = 0.9 * self.precision
 
-        if self.precision > 0.8 and self.grade < 4 :
-            self.precision = 0
-            self.grade += 1
         return terminated, truncated
 
     def _get_rewards(self) -> torch.Tensor:
@@ -399,6 +399,15 @@ class ObstacleEnv(DirectRLEnv):
 
         # count reset
         self._donecount[env_ids] = 0
+
+        # precision 업데이트
+        new_precision = torch.mean(self.min_target_distance[env_ids].float()).item()
+        self.precision = (env_ids.shape[0]/self.num_envs) * new_precision + (1 - (env_ids.shape[0] / self.num_envs)) * self.precision
+        self.min_target_distance[env_ids] = 100
+
+        if self.precision < 0.01 and self.grade < 4 :
+            self.precision = 100
+            self.grade += 1
 
     def _get_observations(self) -> dict:
         # 현재 로봇팔 각도 + 카메라로 입력된 rgbd 데이터(다듬어진) + 타겟의 위치

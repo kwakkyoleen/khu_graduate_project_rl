@@ -1,6 +1,7 @@
 import argparse
 
 from omni.isaac.lab.app import AppLauncher
+import copy
 
 # add argparse arguments
 parser = argparse.ArgumentParser(description="Obstacle avoiding task env.")
@@ -80,7 +81,7 @@ def main():
 
     has_continuous_action_space = True  # continuous action space; else discrete
 
-    max_ep_len = 460                    # max timesteps in one episode
+    max_ep_len = 480                    # max timesteps in one episode
     max_training_timesteps = int(3e6)   # break training loop if timeteps > max_training_timesteps
 
     print_freq = max_ep_len * 10        # print avg reward in the interval (in num timesteps)
@@ -97,7 +98,7 @@ def main():
 
     ################ PPO hyperparameters ################
     update_timestep = max_ep_len * 4      # update policy every n timesteps
-    K_epochs = 80               # update policy for K epochs in one PPO update
+    K_epochs = 5               # update policy for K epochs in one PPO update
 
     eps_clip = 0.2          # clip parameter for PPO
     gamma = 0.99            # discount factor
@@ -146,7 +147,7 @@ def main():
     #####################################################
 
     ################### checkpointing ###################
-    run_num_pretrained = 14     #### change this to prevent overwriting weights in same env_name folder
+    run_num_pretrained = 17     #### change this to prevent overwriting weights in same env_name folder
 
     directory = "PPO_preTrained"
     if not os.path.exists(directory):
@@ -176,7 +177,7 @@ def main():
     log_f = open(log_f_name, "w+")
     # acc_f = open(acc_f_name, "w+")
     # act_f = open(act_f_name, "w+")
-    log_f.write('episode,timestep,reward\n')
+    log_f.write('episode,timestep,reward,acc\n')
     # acc_f.write('timestep,acc\n')
     # act_f.write('timestep,action\n')
 
@@ -189,6 +190,8 @@ def main():
 
     time_step = 0
     i_episode = 0
+
+    min_acc = 100
 
 
 
@@ -225,6 +228,9 @@ def main():
             rewards += reward.cpu().numpy()
             current_ep_reward += reward.cpu().numpy()[0]
 
+            if min_acc > round(env.unwrapped.target_distance[0].item(), 4):
+                min_acc = round(env.unwrapped.target_distance[0].item(), 4)
+
             #logging
             # temp_action = ppo_agent.policy.actor(state)[3]
             # acc_f.write('{},{}\n'.format(time_step, round(env.unwrapped.target_distance[3].item(), 4)))
@@ -248,7 +254,11 @@ def main():
                 temp_action = ppo_agent.policy.actor(state)[3]
                 # print(f"vel_target : {[round(x, 2) for x in env.temp_target_pos[0].tolist()]}")
                 print(f"grade : {env.unwrapped.grade}, precision : {env.unwrapped.precision}")
-                print(f"machine 3 state : {[round(x, 4) for x in state[3, 0:3].tolist()]}")
+                actions = copy.deepcopy(ppo_agent.buffer.actions)
+                stacked_tensor = torch.stack(actions)
+                variance_dim0 = torch.var(stacked_tensor, dim=0)
+                print(f"action val : {variance_dim0}")
+                print(f"machine 3 state : {[round(x, 4) for x in state[3, 0:3].tolist()]}, acc : {round(env.unwrapped.target_distance[0].item(),4)}")
                 print(f"machine 3 value : {round(temp_value.item(), 2)}, action : {[round(x, 2) for x in temp_action.tolist()]}")
             # update PPO agent
             if time_step % update_timestep == 0:
@@ -266,11 +276,12 @@ def main():
                 log_avg_reward = log_running_reward / log_running_episodes
                 log_avg_reward = round(log_avg_reward, 4)
 
-                log_f.write('{},{},{}\n'.format(i_episode, time_step, log_avg_reward))
+                log_f.write('{},{},{},{}\n'.format(i_episode, time_step, log_avg_reward, min_acc))
                 log_f.flush()
 
                 log_running_reward = 0
                 log_running_episodes = 0
+                min_acc = 100
 
             # printing average reward
             if time_step % print_freq == 0:
