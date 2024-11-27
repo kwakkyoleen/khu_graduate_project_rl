@@ -147,7 +147,7 @@ def main():
     #####################################################
 
     ################### checkpointing ###################
-    run_num_pretrained = 17     #### change this to prevent overwriting weights in same env_name folder
+    run_num_pretrained = 18     #### change this to prevent overwriting weights in same env_name folder
 
     directory = "PPO_preTrained"
     if not os.path.exists(directory):
@@ -177,7 +177,7 @@ def main():
     log_f = open(log_f_name, "w+")
     # acc_f = open(acc_f_name, "w+")
     # act_f = open(act_f_name, "w+")
-    log_f.write('episode,timestep,reward,acc\n')
+    log_f.write('episode,timestep,reward,precision,actvar,reach_step,reach_ratio,grade\n')
     # acc_f.write('timestep,acc\n')
     # act_f.write('timestep,action\n')
 
@@ -254,16 +254,8 @@ def main():
                 temp_action = ppo_agent.policy.actor(state)[3]
                 # print(f"vel_target : {[round(x, 2) for x in env.temp_target_pos[0].tolist()]}")
                 print(f"grade : {env.unwrapped.grade}, precision : {env.unwrapped.precision}")
-                actions = copy.deepcopy(ppo_agent.buffer.actions)
-                stacked_tensor = torch.stack(actions)
-                variance_dim0 = torch.var(stacked_tensor, dim=0)
-                print(f"action val : {variance_dim0}")
                 print(f"machine 3 state : {[round(x, 4) for x in state[3, 0:3].tolist()]}, acc : {round(env.unwrapped.target_distance[0].item(),4)}")
                 print(f"machine 3 value : {round(temp_value.item(), 2)}, action : {[round(x, 2) for x in temp_action.tolist()]}")
-            # update PPO agent
-            if time_step % update_timestep == 0:
-                print("update..")
-                ppo_agent.update()
 
             # if continuous action space; then decay action std of ouput action distribution
             if has_continuous_action_space and time_step % action_std_decay_freq == 0:
@@ -276,12 +268,28 @@ def main():
                 log_avg_reward = log_running_reward / log_running_episodes
                 log_avg_reward = round(log_avg_reward, 4)
 
-                log_f.write('{},{},{},{}\n'.format(i_episode, time_step, log_avg_reward, min_acc))
+                actions = copy.deepcopy(ppo_agent.buffer.actions)
+                stacked_tensor = torch.stack(actions)
+                variance_dim0 = torch.var(stacked_tensor, dim=0)
+                var_mean = torch.mean(variance_dim0)
+
+                avg_reach_time = torch.mean(env.unwrapped.min_reach_time_back.clone().float()).item()
+                min_target_distance = env.unwrapped.min_target_distance_back.clone()
+                avg_precision = torch.mean(min_target_distance.clone().float()).item()
+                reach_ratio = (torch.sum(min_target_distance < 0.01) / min_target_distance.numel()).item()
+                grade = env.unwrapped.grade
+
+                log_f.write('{},{},{},{},{},{},{},{}\n'.format(i_episode, time_step, log_avg_reward, avg_precision, var_mean, avg_reach_time, reach_ratio, grade))
                 log_f.flush()
 
                 log_running_reward = 0
                 log_running_episodes = 0
                 min_acc = 100
+
+            # update PPO agent
+            if time_step % update_timestep == 0:
+                print("update..")
+                ppo_agent.update()
 
             # printing average reward
             if time_step % print_freq == 0:

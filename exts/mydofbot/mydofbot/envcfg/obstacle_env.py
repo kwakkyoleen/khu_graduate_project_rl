@@ -190,6 +190,10 @@ class ObstacleEnv(DirectRLEnv):
         self.target_object_pos = torch.zeros_like(self.scene.rigid_objects["Target_obj"].data.root_pos_w)
 
         self.min_target_distance = torch.full((self.num_envs,), fill_value=100, device=self.device, dtype=torch.float)
+        self.min_target_distance_back = torch.full((self.num_envs,), fill_value=100, device=self.device, dtype=torch.float)
+        self.timesteps = torch.zeros((self.num_envs), device=self.device, dtype=torch.int)
+        self.min_reach_time = torch.full((self.num_envs,), fill_value=480, device=self.device, dtype=torch.int)
+        self.min_reach_time_back = torch.full((self.num_envs,), fill_value=480, device=self.device, dtype=torch.int)
 
     def _setup_scene(self):
         self._robot = Articulation(self.cfg.robot_cfg)
@@ -257,6 +261,9 @@ class ObstacleEnv(DirectRLEnv):
             torch.zeros_like(self.target_obj.data.root_vel_w)
         )
 
+        # timestep 증가
+        self.timesteps += 1
+
     def _apply_action(self) -> None:
         # self._robot.set_joint_effort_target(self.target_torque)
         self._robot.set_joint_velocity_target(self.target_vel)
@@ -282,6 +289,10 @@ class ObstacleEnv(DirectRLEnv):
         target_distance = torch.sqrt(torch.sum(target_disparity**2, dim=-1))
         self.target_distance = target_distance
         goal_bool = target_distance < 0.01
+
+        # 목표 도달한 시간 기록
+        reach_idx = torch.nonzero(target_distance <= 0.01).squeeze()
+        self.min_reach_time[reach_idx] = torch.min(self.min_reach_time[reach_idx], self.timesteps[reach_idx])
 
         # 목표까지 도달하면 바로 학습이 종료되게 설정해 놓았는데 이건 추후 분석이 필요할듯
         # terminated = cancel | goal_bool
@@ -403,11 +414,17 @@ class ObstacleEnv(DirectRLEnv):
         # precision 업데이트
         new_precision = torch.mean(self.min_target_distance[env_ids].float()).item()
         self.precision = (env_ids.shape[0]/self.num_envs) * new_precision + (1 - (env_ids.shape[0] / self.num_envs)) * self.precision
+        self.min_target_distance_back[env_ids] = self.min_target_distance[env_ids]
         self.min_target_distance[env_ids] = 100
 
         if self.precision < 0.01 and self.grade < 4 :
             self.precision = 100
             self.grade += 1
+
+        # timestep 초기화
+        self.timesteps[env_ids] = 0
+        self.min_reach_time_back[env_ids] = self.min_reach_time[env_ids]
+        self.min_reach_time[env_ids] = 480
 
     def _get_observations(self) -> dict:
         # 현재 로봇팔 각도 + 카메라로 입력된 rgbd 데이터(다듬어진) + 타겟의 위치
