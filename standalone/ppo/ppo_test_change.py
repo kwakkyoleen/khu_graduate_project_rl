@@ -92,17 +92,18 @@ def main():
     action_std_decay_rate = 0.05        # linearly decay action_std (action_std = action_std - action_std_decay_rate)
     min_action_std = 0.1                # minimum action_std (stop decay after action_std <= min_action_std)
     action_std_decay_freq = int(2.5e5)  # action_std decay frequency (in num timesteps)
-    env_bundles = 8
+    env_bundles = 16
     #####################################################
 
     ## Note : print/log frequencies should be > than max_ep_len
 
     ################ PPO hyperparameters ################
     update_timestep = max_ep_len * 2      # update policy every n timesteps
-    K_epochs = 5               # update policy for K epochs in one PPO update
+    K_epochs = 10               # update policy for K epochs in one PPO update
 
     eps_clip = 0.2          # clip parameter for PPO
     gamma = 0.99            # discount factor
+    alpha = 0.2
 
     lr_actor = 0.0003       # learning rate for actor network
     lr_critic = 0.001       # learning rate for critic network
@@ -148,7 +149,7 @@ def main():
     #####################################################
 
     ################### checkpointing ###################
-    run_num_pretrained = 19     #### change this to prevent overwriting weights in same env_name folder
+    run_num_pretrained = 21     #### change this to prevent overwriting weights in same env_name folder
 
     directory = "PPO_preTrained"
     if not os.path.exists(directory):
@@ -164,7 +165,7 @@ def main():
 
     # initialize a PPO agent
     torch.cuda.empty_cache()
-    ppo_agent = PPO(15, 6, lr_actor, lr_critic, gamma, K_epochs, eps_clip, has_continuous_action_space, env.unwrapped.num_envs, action_std)
+    ppo_agent = PPO(15, 6, lr_actor, lr_critic, gamma, K_epochs, eps_clip, has_continuous_action_space, env.unwrapped.num_envs, alpha, action_std)
     if os.path.exists(checkpoint_path):
         ppo_agent.load(checkpoint_path)
 

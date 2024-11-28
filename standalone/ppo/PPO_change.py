@@ -16,6 +16,13 @@ else:
 print("============================================================================================")
 
 
+def mix_weights(local_weights, central_weights, alpha=0.5):
+    mixed_weights = {}
+    for key in local_weights.keys():
+        mixed_weights[key] = alpha * local_weights[key] + (1 - alpha) * central_weights[key]
+    return mixed_weights
+
+
 ################################## PPO Policy ##################################
 class RolloutBuffer:
     def __init__(self):
@@ -123,7 +130,7 @@ class ActorCritic(nn.Module):
 
 
 class PPO:
-    def __init__(self, state_dim, action_dim, lr_actor, lr_critic, gamma, K_epochs, eps_clip, has_continuous_action_space, env_nums, action_std_init=0.6):
+    def __init__(self, state_dim, action_dim, lr_actor, lr_critic, gamma, K_epochs, eps_clip, has_continuous_action_space, env_nums, alpha, action_std_init=0.6):
 
         self.has_continuous_action_space = has_continuous_action_space
 
@@ -134,15 +141,16 @@ class PPO:
         self.eps_clip = eps_clip
         self.K_epochs = K_epochs
         self.env_nums = env_nums
+        self.alpha = alpha
         
         self.buffer = [RolloutBuffer() for _ in range(env_nums)]
 
         self.policy = ActorCritic(state_dim, action_dim, has_continuous_action_space, action_std_init).to(device)
         self.local_policies = [ActorCritic(state_dim, action_dim, has_continuous_action_space, action_std_init).to(device) for _ in range(env_nums)]
-        self.optimizer = torch.optim.Adam([
+        self.optimizer = [torch.optim.Adam([
                         {'params': self.policy.actor.parameters(), 'lr': lr_actor},
                         {'params': self.policy.critic.parameters(), 'lr': lr_critic}
-                    ])
+                    ]) for _ in range(env_nums)]
 
         self.policy_old = ActorCritic(state_dim, action_dim, has_continuous_action_space, action_std_init).to(device)
         self.policy_old.load_state_dict(self.policy.state_dict())
@@ -248,7 +256,7 @@ class PPO:
             for _ in range(self.K_epochs):
 
                 # Evaluating old actions and values
-                logprobs, state_values, dist_entropy = self.policy.evaluate(old_states, old_actions)
+                logprobs, state_values, dist_entropy = self.local_policies[env_idx].evaluate(old_states, old_actions)
 
                 # match state_values tensor dimensions with rewards tensor
                 state_values = torch.squeeze(state_values)
@@ -263,10 +271,19 @@ class PPO:
                 # final loss of clipped objective PPO
                 loss = -torch.min(surr1, surr2) + 0.5 * self.MseLoss(state_values, rewards) - 0.01 * dist_entropy
                 # take gradient step
-                self.optimizer.zero_grad()
+                self.optimizer[env_idx].zero_grad()
                 loss.mean().backward()
-                self.optimizer.step()
+                self.optimizer[env_idx].step()
             # 로컬 폴리시에 데이터 가져오기
+            central_state_dict = self.policy.state_dict()
+
+            local_state_dict = self.local_policies[env_idx].state_dict()
+            # 가중치를 섞음
+            mixed_weights = mix_weights(local_state_dict, central_state_dict, alpha=self.alpha)
+            central_state_dict.update(mixed_weights)
+
+            # policy들 가중치 업데이트
+            self.policy.load_state_dict(central_state_dict)
             self.local_policies[env_idx].load_state_dict(self.policy.state_dict())
             self.buffer[env_idx].clear()
                 
