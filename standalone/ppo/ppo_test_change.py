@@ -12,7 +12,7 @@ parser.add_argument(
     help="Disable fabric and use USD I/O operations.",
 )
 parser.add_argument(
-    "--num_envs", type=int, default=64, help="Number of environments to simulate."
+    "--num_envs", type=int, default=128, help="Number of environments to simulate."
 )
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
@@ -99,8 +99,8 @@ def main():
 
     ################ PPO hyperparameters ################
     update_timestep = max_ep_len * 4      # update policy every n timesteps
-    central_update_timestep = update_timestep * 16
-    K_epochs = 10               # update policy for K epochs in one PPO update
+    central_update_timestep = update_timestep * 12
+    K_epochs = 5               # update policy for K epochs in one PPO update
 
     eps_clip = 0.2          # clip parameter for PPO
     gamma = 0.99            # discount factor
@@ -150,7 +150,7 @@ def main():
     #####################################################
 
     ################### checkpointing ###################
-    run_num_pretrained = 23     #### change this to prevent overwriting weights in same env_name folder
+    run_num_pretrained = 24     #### change this to prevent overwriting weights in same env_name folder
 
     directory = "PPO_preTrained"
     if not os.path.exists(directory):
@@ -166,7 +166,7 @@ def main():
 
     # initialize a PPO agent
     torch.cuda.empty_cache()
-    ppo_agent = PPO(15, 6, lr_actor, lr_critic, gamma, K_epochs, eps_clip, has_continuous_action_space, env.unwrapped.num_envs, alpha, action_std)
+    ppo_agent = PPO(15, 6, lr_actor, lr_critic, gamma, K_epochs, eps_clip, has_continuous_action_space, env.unwrapped.num_envs, env_bundles, alpha, action_std)
     if os.path.exists(checkpoint_path):
         ppo_agent.load(checkpoint_path)
 

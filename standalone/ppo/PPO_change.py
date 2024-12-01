@@ -140,23 +140,27 @@ class AsyncMultiAgentManager:
         개별 에이전트의 행동을 비동기적으로 계산하는 코루틴
         """
         with torch.no_grad():
-            action, logprob, state_value = self.local_policies[agent_idx].act(state.unsqueeze(0))
+            action, logprob, state_value = self.local_policies[agent_idx].act(state)
         return action, logprob, state_value
 
-    async def get_all_actions(self, states):
+    async def get_all_actions(self, states, bundles):
         """
         모든 에이전트의 행동과 관련 데이터를 비동기적으로 계산
         """
         tasks = [
-            self.compute_action(i, states[i]) for i in range(len(self.local_policies))
+            self.compute_action(i, states[i * bundles : (i + 1) * bundles]) for i in range(len(self.local_policies))
         ]
         # gather로 모든 코루틴 실행
-        results = await asyncio.gather(*tasks)
+        results = []
+        pre_results = await asyncio.gather(*tasks)
+        for a, b, c in pre_results:
+            for i in range(bundles):
+                results.append((a[i], b[i], c[i]))
         return results
     
 
 class PPO:
-    def __init__(self, state_dim, action_dim, lr_actor, lr_critic, gamma, K_epochs, eps_clip, has_continuous_action_space, env_nums, alpha, action_std_init=0.6):
+    def __init__(self, state_dim, action_dim, lr_actor, lr_critic, gamma, K_epochs, eps_clip, has_continuous_action_space, env_nums, env_bundles, alpha, action_std_init=0.6):
 
         self.has_continuous_action_space = has_continuous_action_space
 
@@ -167,17 +171,19 @@ class PPO:
         self.eps_clip = eps_clip
         self.K_epochs = K_epochs
         self.env_nums = env_nums
+        self.env_bundles = env_bundles
+        self.policy_nums = env_nums // env_bundles
         self.alpha = alpha
         
         self.buffer = [RolloutBuffer() for _ in range(env_nums)]
 
         self.policy = ActorCritic(state_dim, action_dim, has_continuous_action_space, action_std_init).to(device)
-        self.local_policies = [ActorCritic(state_dim, action_dim, has_continuous_action_space, action_std_init).to(device) for _ in range(env_nums)]
+        self.local_policies = [ActorCritic(state_dim, action_dim, has_continuous_action_space, action_std_init).to(device) for _ in range(self.policy_nums)]
         self.manager = AsyncMultiAgentManager(self.local_policies, device)
         self.optimizer = [torch.optim.Adam([
                         {'params': self.policy.actor.parameters(), 'lr': lr_actor},
                         {'params': self.policy.critic.parameters(), 'lr': lr_critic}
-                    ]) for _ in range(env_nums)]
+                    ]) for _ in range(self.policy_nums)]
 
         self.policy_old = ActorCritic(state_dim, action_dim, has_continuous_action_space, action_std_init).to(device)
         self.policy_old.load_state_dict(self.policy.state_dict())
@@ -222,10 +228,10 @@ class PPO:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
                     # 이미 실행 중인 이벤트 루프가 있다면 `run_until_complete`를 사용
-                    results = loop.run_until_complete(self.manager.get_all_actions(state))
+                    results = loop.run_until_complete(self.manager.get_all_actions(state, self.env_bundles))
                 else:
                     # 새로운 이벤트 루프 실행
-                    results = asyncio.run(self.manager.get_all_actions(state))
+                    results = asyncio.run(self.manager.get_all_actions(state, self.env_bundles))
                 actions = []
                 for i, (action, action_logprob, state_val) in enumerate(results):
                     self.buffer[i].states.append(state[i].clone().detach())
@@ -300,7 +306,7 @@ class PPO:
             for _ in range(self.K_epochs):
 
                 # Evaluating old actions and values
-                logprobs, state_values, dist_entropy = self.local_policies[env_idx].evaluate(old_states, old_actions)
+                logprobs, state_values, dist_entropy = self.local_policies[env_idx // self.env_bundles].evaluate(old_states, old_actions)
 
                 # match state_values tensor dimensions with rewards tensor
                 state_values = torch.squeeze(state_values)
@@ -315,9 +321,9 @@ class PPO:
                 # final loss of clipped objective PPO
                 loss = -torch.min(surr1, surr2) + 0.5 * self.MseLoss(state_values, rewards) - 0.01 * dist_entropy
                 # take gradient step
-                self.optimizer[env_idx].zero_grad()
+                self.optimizer[env_idx // self.env_bundles].zero_grad()
                 loss.mean().backward()
-                self.optimizer[env_idx].step()
+                self.optimizer[env_idx // self.env_bundles].step()
             # 로컬 폴리시에 데이터 가져오기
             # central_state_dict = self.policy.state_dict()
 
