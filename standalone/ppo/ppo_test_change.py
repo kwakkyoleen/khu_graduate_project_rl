@@ -98,12 +98,13 @@ def main():
     ## Note : print/log frequencies should be > than max_ep_len
 
     ################ PPO hyperparameters ################
-    update_timestep = max_ep_len * 2      # update policy every n timesteps
+    update_timestep = max_ep_len * 4      # update policy every n timesteps
+    central_update_timestep = update_timestep * 16
     K_epochs = 10               # update policy for K epochs in one PPO update
 
     eps_clip = 0.2          # clip parameter for PPO
     gamma = 0.99            # discount factor
-    alpha = 0.2
+    alpha = 0.5
 
     lr_actor = 0.0003       # learning rate for actor network
     lr_critic = 0.001       # learning rate for critic network
@@ -149,7 +150,7 @@ def main():
     #####################################################
 
     ################### checkpointing ###################
-    run_num_pretrained = 21     #### change this to prevent overwriting weights in same env_name folder
+    run_num_pretrained = 23     #### change this to prevent overwriting weights in same env_name folder
 
     directory = "PPO_preTrained"
     if not os.path.exists(directory):
@@ -297,6 +298,10 @@ def main():
                 ppo_agent.update(bundle_list)
                 now_bundle += 1
                 now_bundle = now_bundle % env_bundles
+
+            if time_step % central_update_timestep == 0:
+                print("central update..")
+                ppo_agent.update_central()
 
             # printing average reward
             if time_step % print_freq == 0:

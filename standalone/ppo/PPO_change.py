@@ -222,7 +222,7 @@ class PPO:
 
     def update(self, env_list):
         # Monte Carlo estimate of returns
-        for env_idx in env_list:
+        for env_idx in range(self.env_nums):
 
             env_rewards = self.buffer[env_idx].rewards
             env_states = self.buffer[env_idx].states 
@@ -275,23 +275,42 @@ class PPO:
                 loss.mean().backward()
                 self.optimizer[env_idx].step()
             # 로컬 폴리시에 데이터 가져오기
-            central_state_dict = self.policy.state_dict()
+            # central_state_dict = self.policy.state_dict()
 
-            local_state_dict = self.local_policies[env_idx].state_dict()
-            # 가중치를 섞음
-            mixed_weights = mix_weights(local_state_dict, central_state_dict, alpha=self.alpha)
-            central_state_dict.update(mixed_weights)
+            # local_state_dict = self.local_policies[env_idx].state_dict()
+            # # 가중치를 섞음
+            # mixed_weights = mix_weights(local_state_dict, central_state_dict, alpha=self.alpha)
+            # central_state_dict.update(mixed_weights)
 
-            # policy들 가중치 업데이트
-            self.policy.load_state_dict(central_state_dict)
-            self.local_policies[env_idx].load_state_dict(self.policy.state_dict())
+            # # policy들 가중치 업데이트
+            # self.policy.load_state_dict(central_state_dict)
+            # self.local_policies[env_idx].load_state_dict(self.policy.state_dict())
             self.buffer[env_idx].clear()
                 
         # # Copy new weights into old policy
-        self.policy_old.load_state_dict(self.policy.state_dict())
+        # self.policy_old.load_state_dict(self.policy.state_dict())
 
         # # clear buffer
         # self.buffer.clear()
+
+    def update_central(self):
+        central_state_dict = self.policy.state_dict()
+        for key in central_state_dict.keys():
+        # 모든 로컬 정책의 해당 가중치를 평균 (또는 가중합)
+            central_state_dict[key] = self.alpha * torch.mean(
+                torch.stack([local_policy.state_dict()[key] for local_policy in self.local_policies]), dim=0
+            ) + (1 - self.alpha) * central_state_dict[key]
+        
+        # 중앙 정책 갱신
+        self.policy.load_state_dict(central_state_dict)
+        self.policy_old.load_state_dict(self.policy.state_dict())
+
+        # 로컬 정책 갱신
+        for local_policy in self.local_policies:
+            local_policy.load_state_dict(self.policy.state_dict())
+
+        for buf in self.buffer:
+            buf.clear()
     
     def save(self, checkpoint_path):
         torch.save(self.policy_old.state_dict(), checkpoint_path)
