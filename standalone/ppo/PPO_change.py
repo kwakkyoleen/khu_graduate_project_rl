@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.distributions import MultivariateNormal
 from torch.distributions import Categorical
+import asyncio
 
 ################################## set device ##################################
 print("============================================================================================")
@@ -129,6 +130,31 @@ class ActorCritic(nn.Module):
         return action_logprobs, state_values, dist_entropy
 
 
+class AsyncMultiAgentManager:
+    def __init__(self, local_policies, device):
+        self.local_policies = local_policies
+        self.device = device
+
+    async def compute_action(self, agent_idx, state):
+        """
+        개별 에이전트의 행동을 비동기적으로 계산하는 코루틴
+        """
+        with torch.no_grad():
+            action, logprob, state_value = self.local_policies[agent_idx].act(state.unsqueeze(0))
+        return action, logprob, state_value
+
+    async def get_all_actions(self, states):
+        """
+        모든 에이전트의 행동과 관련 데이터를 비동기적으로 계산
+        """
+        tasks = [
+            self.compute_action(i, states[i]) for i in range(len(self.local_policies))
+        ]
+        # gather로 모든 코루틴 실행
+        results = await asyncio.gather(*tasks)
+        return results
+    
+
 class PPO:
     def __init__(self, state_dim, action_dim, lr_actor, lr_critic, gamma, K_epochs, eps_clip, has_continuous_action_space, env_nums, alpha, action_std_init=0.6):
 
@@ -147,6 +173,7 @@ class PPO:
 
         self.policy = ActorCritic(state_dim, action_dim, has_continuous_action_space, action_std_init).to(device)
         self.local_policies = [ActorCritic(state_dim, action_dim, has_continuous_action_space, action_std_init).to(device) for _ in range(env_nums)]
+        self.manager = AsyncMultiAgentManager(self.local_policies, device)
         self.optimizer = [torch.optim.Adam([
                         {'params': self.policy.actor.parameters(), 'lr': lr_actor},
                         {'params': self.policy.critic.parameters(), 'lr': lr_critic}
@@ -192,10 +219,16 @@ class PPO:
         if self.has_continuous_action_space:
             with torch.no_grad():
                 state = state.clone().detach()
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # 이미 실행 중인 이벤트 루프가 있다면 `run_until_complete`를 사용
+                    results = loop.run_until_complete(self.manager.get_all_actions(state))
+                else:
+                    # 새로운 이벤트 루프 실행
+                    results = asyncio.run(self.manager.get_all_actions(state))
                 actions = []
-                for i, net in enumerate(self.local_policies):
-                    action, action_logprob, state_val = net.act(state[i].unsqueeze(0))
-                    self.buffer[i].states.append(state[i])
+                for i, (action, action_logprob, state_val) in enumerate(results):
+                    self.buffer[i].states.append(state[i].clone().detach())
                     self.buffer[i].actions.append(action.squeeze(0))
                     self.buffer[i].logprobs.append(action_logprob.squeeze(0))
                     self.buffer[i].state_values.append(state_val.squeeze(0))
@@ -204,6 +237,17 @@ class PPO:
                 action_tensor = torch.stack(actions)
 
             return action_tensor.cpu().numpy()
+            #     for i, net in enumerate(self.local_policies):
+            #         action, action_logprob, state_val = net.act(state[i].unsqueeze(0))
+            #         self.buffer[i].states.append(state[i])
+            #         self.buffer[i].actions.append(action.squeeze(0))
+            #         self.buffer[i].logprobs.append(action_logprob.squeeze(0))
+            #         self.buffer[i].state_values.append(state_val.squeeze(0))
+            #         actions.append(action.squeeze(0))
+
+            #     action_tensor = torch.stack(actions)
+
+            # return action_tensor.cpu().numpy()
         else:
             with torch.no_grad():
                 state = state.clone().detach()
