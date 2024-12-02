@@ -181,9 +181,9 @@ class PPO:
         self.local_policies = [ActorCritic(state_dim, action_dim, has_continuous_action_space, action_std_init).to(device) for _ in range(self.policy_nums)]
         self.manager = AsyncMultiAgentManager(self.local_policies, device)
         self.optimizer = [torch.optim.Adam([
-                        {'params': self.policy.actor.parameters(), 'lr': lr_actor},
-                        {'params': self.policy.critic.parameters(), 'lr': lr_critic}
-                    ]) for _ in range(self.policy_nums)]
+                        {'params': self.local_policies[i].actor.parameters(), 'lr': lr_actor},
+                        {'params': self.local_policies[i].critic.parameters(), 'lr': lr_critic}
+                    ]) for i in range(self.policy_nums)]
 
         self.policy_old = ActorCritic(state_dim, action_dim, has_continuous_action_space, action_std_init).to(device)
         self.policy_old.load_state_dict(self.policy.state_dict())
@@ -238,7 +238,7 @@ class PPO:
                     self.buffer[i].actions.append(action.squeeze(0))
                     self.buffer[i].logprobs.append(action_logprob.squeeze(0))
                     self.buffer[i].state_values.append(state_val.squeeze(0))
-                    actions.append(action.squeeze(0))
+                    actions.append(action.squeeze(0).clone().detach())
 
                 action_tensor = torch.stack(actions)
 

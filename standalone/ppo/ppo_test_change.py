@@ -99,7 +99,9 @@ def main():
 
     ################ PPO hyperparameters ################
     update_timestep = max_ep_len * 4      # update policy every n timesteps
-    central_update_timestep = update_timestep * 12
+    central_update_idx = 0
+    central_update_triggers = [0.1, 0.7, 0.5, 0.3]
+    central_update_multiples = [2, 4, 6, 10, 16]
     K_epochs = 5               # update policy for K epochs in one PPO update
 
     eps_clip = 0.2          # clip parameter for PPO
@@ -255,8 +257,8 @@ def main():
 
             # value
             if time_step % 50 == 0:
-                temp_value = ppo_agent.policy.critic(state)[3]
-                temp_action = ppo_agent.policy.actor(state)[3]
+                temp_value = ppo_agent.local_policies[0].critic(state[3].unsqueeze(0)).squeeze(0)
+                temp_action = ppo_agent.local_policies[0].actor(state[3].unsqueeze(0)).squeeze(0)
                 # print(f"vel_target : {[round(x, 2) for x in env.temp_target_pos[0].tolist()]}")
                 print(f"grade : {env.unwrapped.grade}, precision : {env.unwrapped.precision}")
                 print(f"machine 3 state : {[round(x, 4) for x in state[3, 0:3].tolist()]}, acc : {round(env.unwrapped.target_distance[0].item(),4)}")
@@ -299,7 +301,11 @@ def main():
                 now_bundle += 1
                 now_bundle = now_bundle % env_bundles
 
-            if time_step % central_update_timestep == 0:
+            # update central
+            if time_step % (update_timestep * central_update_multiples[central_update_idx]) == 0:
+                if central_update_idx < len(central_update_triggers) and avg_precision < central_update_triggers[central_update_idx]:
+                    central_update_idx += 1
+                
                 print("central update..")
                 ppo_agent.update_central()
 
