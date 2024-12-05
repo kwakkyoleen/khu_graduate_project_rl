@@ -100,13 +100,13 @@ def main():
     ################ PPO hyperparameters ################
     update_timestep = max_ep_len * 4      # update policy every n timesteps
     central_update_idx = 0
-    central_update_triggers = [0.1, 0.7, 0.5, 0.3]
+    central_update_triggers = [0.1, 0.07, 0.05, 0.03]
     central_update_multiples = [2, 4, 6, 10, 16]
-    K_epochs = 5               # update policy for K epochs in one PPO update
+    K_epochs = 10               # update policy for K epochs in one PPO update
 
     eps_clip = 0.2          # clip parameter for PPO
     gamma = 0.99            # discount factor
-    alpha = 0.5
+    alpha = 0.7
 
     lr_actor = 0.0003       # learning rate for actor network
     lr_critic = 0.001       # learning rate for critic network
@@ -152,7 +152,7 @@ def main():
     #####################################################
 
     ################### checkpointing ###################
-    run_num_pretrained = 24     #### change this to prevent overwriting weights in same env_name folder
+    run_num_pretrained = 25     #### change this to prevent overwriting weights in same env_name folder
 
     directory = "PPO_preTrained"
     if not os.path.exists(directory):
