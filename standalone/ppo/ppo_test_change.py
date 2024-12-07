@@ -106,7 +106,7 @@ def main():
 
     eps_clip = 0.2          # clip parameter for PPO
     gamma = 0.99            # discount factor
-    alpha = 0.7
+    alpha = 0.01
 
     lr_actor = 0.0003       # learning rate for actor network
     lr_critic = 0.001       # learning rate for critic network
@@ -125,6 +125,8 @@ def main():
     env = gym.make("Obstacle-direct-v0", cfg=env_cfg)
     # reset environment at start
     env.reset()
+
+    central_idx = env.unwrapped.num_envs - env_bundles
 
     ###################### logging ######################
 
@@ -152,7 +154,7 @@ def main():
     #####################################################
 
     ################### checkpointing ###################
-    run_num_pretrained = 25     #### change this to prevent overwriting weights in same env_name folder
+    run_num_pretrained = 26     #### change this to prevent overwriting weights in same env_name folder
 
     directory = "PPO_preTrained"
     if not os.path.exists(directory):
@@ -233,7 +235,7 @@ def main():
 
             time_step += 1
             rewards += reward.cpu().numpy()
-            current_ep_reward += reward.cpu().numpy()[0]
+            current_ep_reward += np.mean(reward.cpu().numpy()[central_idx:])
 
             if min_acc > round(env.unwrapped.target_distance[0].item(), 4):
                 min_acc = round(env.unwrapped.target_distance[0].item(), 4)
@@ -275,13 +277,13 @@ def main():
                 log_avg_reward = log_running_reward / log_running_episodes
                 log_avg_reward = round(log_avg_reward, 4)
 
-                actions = copy.deepcopy(ppo_agent.buffer[0].actions)
+                actions = copy.deepcopy(ppo_agent.buffer[central_idx].actions)
                 stacked_tensor = torch.stack(actions)
                 variance_dim0 = torch.var(stacked_tensor, dim=0)
                 var_mean = torch.mean(variance_dim0)
 
-                avg_reach_time = torch.mean(env.unwrapped.min_reach_time_back.clone().float()).item()
-                min_target_distance = env.unwrapped.min_target_distance_back.clone()
+                avg_reach_time = torch.mean(env.unwrapped.min_reach_time_back.clone().float()[central_idx:]).item()
+                min_target_distance = env.unwrapped.min_target_distance_back.clone()[central_idx:]
                 avg_precision = torch.mean(min_target_distance.clone().float()).item()
                 reach_ratio = (torch.sum(min_target_distance < 0.01) / min_target_distance.numel()).item()
                 grade = env.unwrapped.grade
@@ -301,13 +303,13 @@ def main():
                 now_bundle += 1
                 now_bundle = now_bundle % env_bundles
 
-            # update central
-            if time_step % (update_timestep * central_update_multiples[central_update_idx]) == 0:
-                if central_update_idx < len(central_update_triggers) and avg_precision < central_update_triggers[central_update_idx]:
-                    central_update_idx += 1
+            # # update central
+            # if time_step % (update_timestep * central_update_multiples[central_update_idx]) == 0:
+            #     if central_update_idx < len(central_update_triggers) and avg_precision < central_update_triggers[central_update_idx]:
+            #         central_update_idx += 1
                 
-                print("central update..")
-                ppo_agent.update_central()
+            #     print("central update..")
+            #     ppo_agent.update_central()
 
             # printing average reward
             if time_step % print_freq == 0:
@@ -330,7 +332,7 @@ def main():
                 print("Elapsed Time  : ", datetime.now().replace(microsecond=0) - start_time)
                 print("--------------------------------------------------------------------------------------------")
 
-            if done.cpu().numpy()[0] :
+            if done.cpu().numpy()[central_idx] :
                 print_running_reward += current_ep_reward
                 print_running_episodes += 1
 

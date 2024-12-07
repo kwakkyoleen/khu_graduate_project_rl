@@ -42,6 +42,7 @@ class ObstacleEnvCfg(DirectRLEnvCfg):
     num_observations = 3  # 관찰 갯수
     num_states = 0
     num_envs = 128
+    env_bundles = 16
     env_spacing = 4.0
     kp = 20
     kd = 1
@@ -412,8 +413,8 @@ class ObstacleEnv(DirectRLEnv):
         self._donecount[env_ids] = 0
 
         # precision 업데이트
-        new_precision = torch.mean(self.min_target_distance[env_ids].float()).item()
-        self.precision = (env_ids.shape[0]/self.num_envs) * new_precision + (1 - (env_ids.shape[0] / self.num_envs)) * self.precision
+        # new_precision = torch.mean(self.min_target_distance[env_ids].float()).item()
+        self.precision = torch.mean(self.min_target_distance[self.num_envs - self.cfg.env_bundles :].float()).item()
         self.min_target_distance_back[env_ids] = self.min_target_distance[env_ids]
         self.min_target_distance[env_ids] = 100
 

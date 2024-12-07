@@ -131,8 +131,9 @@ class ActorCritic(nn.Module):
 
 
 class AsyncMultiAgentManager:
-    def __init__(self, local_policies, device):
+    def __init__(self, local_policies, central_policy, device):
         self.local_policies = local_policies
+        self.central_policy = central_policy
         self.device = device
 
     async def compute_action(self, agent_idx, state):
@@ -140,7 +141,10 @@ class AsyncMultiAgentManager:
         개별 에이전트의 행동을 비동기적으로 계산하는 코루틴
         """
         with torch.no_grad():
-            action, logprob, state_value = self.local_policies[agent_idx].act(state)
+            if agent_idx < len(self.local_policies) : 
+                action, logprob, state_value = self.local_policies[agent_idx].act(state)
+            else : 
+                action, logprob, state_value = self.central_policy.act(state)
         return action, logprob, state_value
 
     async def get_all_actions(self, states, bundles):
@@ -148,7 +152,7 @@ class AsyncMultiAgentManager:
         모든 에이전트의 행동과 관련 데이터를 비동기적으로 계산
         """
         tasks = [
-            self.compute_action(i, states[i * bundles : (i + 1) * bundles]) for i in range(len(self.local_policies))
+            self.compute_action(i, states[i * bundles : (i + 1) * bundles]) for i in range(len(self.local_policies) + 1)
         ]
         # gather로 모든 코루틴 실행
         results = []
@@ -172,14 +176,14 @@ class PPO:
         self.K_epochs = K_epochs
         self.env_nums = env_nums
         self.env_bundles = env_bundles
-        self.policy_nums = env_nums // env_bundles
+        self.policy_nums = env_nums // env_bundles - 1
         self.alpha = alpha
         
         self.buffer = [RolloutBuffer() for _ in range(env_nums)]
 
         self.policy = ActorCritic(state_dim, action_dim, has_continuous_action_space, action_std_init).to(device)
         self.local_policies = [ActorCritic(state_dim, action_dim, has_continuous_action_space, action_std_init).to(device) for _ in range(self.policy_nums)]
-        self.manager = AsyncMultiAgentManager(self.local_policies, device)
+        self.manager = AsyncMultiAgentManager(self.local_policies, self.policy, device)
         self.optimizer = [torch.optim.Adam([
                         {'params': self.local_policies[i].actor.parameters(), 'lr': lr_actor},
                         {'params': self.local_policies[i].critic.parameters(), 'lr': lr_critic}
@@ -274,71 +278,74 @@ class PPO:
         # Monte Carlo estimate of returns
         for env_idx in range(self.env_nums):
 
-            env_rewards = self.buffer[env_idx].rewards
-            env_states = self.buffer[env_idx].states 
-            env_actions = self.buffer[env_idx].actions 
-            env_logprobs = self.buffer[env_idx].logprobs 
-            env_state_values = self.buffer[env_idx].state_values
-            env_is_terminals = self.buffer[env_idx].is_terminals 
+            if env_idx < self.policy_nums * self.env_bundles:
+                env_rewards = self.buffer[env_idx].rewards
+                env_states = self.buffer[env_idx].states 
+                env_actions = self.buffer[env_idx].actions 
+                env_logprobs = self.buffer[env_idx].logprobs 
+                env_state_values = self.buffer[env_idx].state_values
+                env_is_terminals = self.buffer[env_idx].is_terminals 
 
-            rewards = []
-            discounted_reward = 0
-            for reward, is_terminal in zip(reversed(env_rewards), reversed(env_is_terminals)):
-                if is_terminal:
-                    discounted_reward = 0
-                discounted_reward = reward + (self.gamma * discounted_reward)
-                rewards.insert(0, discounted_reward)
-                
-            # Normalizing the rewards
-            rewards = torch.tensor(rewards, dtype=torch.float32).to(device)
-            # rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
+                rewards = []
+                discounted_reward = 0
+                for reward, is_terminal in zip(reversed(env_rewards), reversed(env_is_terminals)):
+                    if is_terminal:
+                        discounted_reward = 0
+                    discounted_reward = reward + (self.gamma * discounted_reward)
+                    rewards.insert(0, discounted_reward)
+                    
+                # Normalizing the rewards
+                rewards = torch.tensor(rewards, dtype=torch.float32).to(device)
+                # rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
 
-            # convert list to tensor
-            old_states = torch.squeeze(torch.stack(env_states, dim=0)).to(device)
-            old_actions = torch.squeeze(torch.stack(env_actions, dim=0)).to(device)
-            old_logprobs = torch.squeeze(torch.stack(env_logprobs, dim=0)).to(device)
-            old_state_values = torch.squeeze(torch.stack(env_state_values, dim=0)).to(device)
+                # convert list to tensor
+                old_states = torch.squeeze(torch.stack(env_states, dim=0)).to(device)
+                old_actions = torch.squeeze(torch.stack(env_actions, dim=0)).to(device)
+                old_logprobs = torch.squeeze(torch.stack(env_logprobs, dim=0)).to(device)
+                old_state_values = torch.squeeze(torch.stack(env_state_values, dim=0)).to(device)
 
-            # calculate advantages
-            advantages = rewards.detach() - old_state_values.detach()
+                # calculate advantages
+                advantages = rewards.detach() - old_state_values.detach()
 
-            # Optimize policy for K epochs
-            for _ in range(self.K_epochs):
+                # Optimize policy for K epochs
+                for _ in range(self.K_epochs):
 
-                # Evaluating old actions and values
-                logprobs, state_values, dist_entropy = self.local_policies[env_idx // self.env_bundles].evaluate(old_states, old_actions)
+                    # Evaluating old actions and values
+                    logprobs, state_values, dist_entropy = self.local_policies[env_idx // self.env_bundles].evaluate(old_states, old_actions)
 
-                # match state_values tensor dimensions with rewards tensor
-                state_values = torch.squeeze(state_values)
-                
-                # Finding the ratio (pi_theta / pi_theta__old)
-                ratios = torch.exp(logprobs - old_logprobs.detach())
+                    # match state_values tensor dimensions with rewards tensor
+                    state_values = torch.squeeze(state_values)
+                    
+                    # Finding the ratio (pi_theta / pi_theta__old)
+                    ratios = torch.exp(logprobs - old_logprobs.detach())
 
-                # Finding Surrogate Loss  
-                surr1 = ratios * advantages
-                surr2 = torch.clamp(ratios, 1-self.eps_clip, 1+self.eps_clip) * advantages
+                    # Finding Surrogate Loss  
+                    surr1 = ratios * advantages
+                    surr2 = torch.clamp(ratios, 1-self.eps_clip, 1+self.eps_clip) * advantages
 
-                # final loss of clipped objective PPO
-                loss = -torch.min(surr1, surr2) + 0.5 * self.MseLoss(state_values, rewards) - 0.01 * dist_entropy
-                # take gradient step
-                self.optimizer[env_idx // self.env_bundles].zero_grad()
-                loss.mean().backward()
-                self.optimizer[env_idx // self.env_bundles].step()
-            # 로컬 폴리시에 데이터 가져오기
-            # central_state_dict = self.policy.state_dict()
+                    # final loss of clipped objective PPO
+                    loss = -torch.min(surr1, surr2) + 0.5 * self.MseLoss(state_values, rewards) - 0.01 * dist_entropy
+                    # take gradient step
+                    self.optimizer[env_idx // self.env_bundles].zero_grad()
+                    loss.mean().backward()
+                    self.optimizer[env_idx // self.env_bundles].step()
 
-            # local_state_dict = self.local_policies[env_idx].state_dict()
-            # # 가중치를 섞음
-            # mixed_weights = mix_weights(local_state_dict, central_state_dict, alpha=self.alpha)
-            # central_state_dict.update(mixed_weights)
+                if env_idx % self.env_bundles == self.env_bundles - 1 :
+                    # 로컬 폴리시에 데이터 가져오기
+                    central_state_dict = self.policy.state_dict()
 
-            # # policy들 가중치 업데이트
-            # self.policy.load_state_dict(central_state_dict)
-            # self.local_policies[env_idx].load_state_dict(self.policy.state_dict())
+                    local_state_dict = self.local_policies[env_idx // self.env_bundles].state_dict()
+                    # 가중치를 섞음
+                    mixed_weights = mix_weights(local_state_dict, central_state_dict, alpha=self.alpha)
+                    central_state_dict.update(mixed_weights)
+
+                    # policy들 가중치 업데이트
+                    self.policy.load_state_dict(central_state_dict)
+                    # self.local_policies[env_idx].load_state_dict(self.policy.state_dict())
             self.buffer[env_idx].clear()
                 
         # # Copy new weights into old policy
-        # self.policy_old.load_state_dict(self.policy.state_dict())
+        self.policy_old.load_state_dict(self.policy.state_dict())
 
         # # clear buffer
         # self.buffer.clear()
