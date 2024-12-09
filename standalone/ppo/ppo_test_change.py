@@ -101,12 +101,12 @@ def main():
     update_timestep = max_ep_len * 4      # update policy every n timesteps
     central_update_idx = 0
     central_update_triggers = [0.1, 0.07, 0.05, 0.03]
-    central_update_multiples = [2, 4, 6, 10, 16]
+    central_update_multiples = [2, 3, 5, 8, 12]
     K_epochs = 10               # update policy for K epochs in one PPO update
 
     eps_clip = 0.2          # clip parameter for PPO
     gamma = 0.99            # discount factor
-    alpha = 0.01
+    alpha = 0.05
 
     lr_actor = 0.0003       # learning rate for actor network
     lr_critic = 0.001       # learning rate for critic network
@@ -154,7 +154,7 @@ def main():
     #####################################################
 
     ################### checkpointing ###################
-    run_num_pretrained = 26     #### change this to prevent overwriting weights in same env_name folder
+    run_num_pretrained = 27     #### change this to prevent overwriting weights in same env_name folder
 
     directory = "PPO_preTrained"
     if not os.path.exists(directory):
@@ -303,13 +303,13 @@ def main():
                 now_bundle += 1
                 now_bundle = now_bundle % env_bundles
 
-            # # update central
-            # if time_step % (update_timestep * central_update_multiples[central_update_idx]) == 0:
-            #     if central_update_idx < len(central_update_triggers) and avg_precision < central_update_triggers[central_update_idx]:
-            #         central_update_idx += 1
+            # update central
+            if time_step % (update_timestep * central_update_multiples[central_update_idx]) == 0:
+                if central_update_idx < len(central_update_triggers) and avg_precision < central_update_triggers[central_update_idx]:
+                    central_update_idx += 1
                 
-            #     print("central update..")
-            #     ppo_agent.update_central()
+                print("central update..")
+                ppo_agent.update_central()
 
             # printing average reward
             if time_step % print_freq == 0:

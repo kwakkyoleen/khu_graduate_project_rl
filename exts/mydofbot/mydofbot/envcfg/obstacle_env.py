@@ -132,15 +132,15 @@ def make_rand_val(grade : int, env_ids: torch.Tensor) -> torch.Tensor:
         v1 = 0.05
         v2 = 3.14 / 4
     elif grade == 1:
-        v1 = 0.05
+        v1 = 0.1
         v2 = 3.14 / 2
     elif grade == 2:
         v1 = 0.1
-        v2 = 3.14 / 2
+        v2 = 3 * 3.14 / 4
     elif grade == 3:
         v1 = 0.1
-        v2 = 3 * 3.14 / 4
-    elif grade == 4:
+        v2 = 4 * 3.14 / 5
+    elif grade >= 4:
         v1 = 0.1  # 내원 반지름 최대 2까지 증가
         v2 = 3.14
     r = torch.rand(n) * v1 + v1  # r2
