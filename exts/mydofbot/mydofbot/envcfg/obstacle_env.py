@@ -29,6 +29,8 @@ from omni.isaac.lab.sensors import (
 )
 
 from ..kinova.gen3lite import MY_GEN3LITE_CFG
+from gymnasium import spaces
+import numpy as np
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -39,7 +41,9 @@ class ObstacleEnvCfg(DirectRLEnvCfg):
     episode_length_s = 8.0  # 에피소드 길이
     robot_dof_angle_scales = 0.05  # [라디안] 1도는 0.0174라디안임
     num_actions = 6  # 액션의 갯수
-    num_observations = 3  # 관찰 갯수
+    num_observations = 15  # 관찰 갯수
+    action_space = 6  # 액션의 갯수
+    observation_space = 15  # 관찰 갯수
     num_states = 0
     num_envs = 128
     env_bundles = 16
@@ -74,7 +78,7 @@ class ObstacleEnvCfg(DirectRLEnvCfg):
 
     # angle scale
     angle_scale_factor = 0.1
-    vel_scale_factor = 60
+    vel_scale_factor = 0.5
 
 
 # @configclass
@@ -164,6 +168,20 @@ class ObstacleEnv(DirectRLEnv):
         super().__init__(cfg, render_mode, **kwargs)
         self.dt = self.cfg.sim.dt * self.cfg.decimation
 
+        # action, observation space 설정
+        # self.observation_space = spaces.Box(
+        #     low=-1.0,
+        #     high=1.0,
+        #     shape=(self.cfg.observation_space,),
+        #     dtype=np.float32,
+        # )
+        # self.action_space = spaces.Box(
+        #     low=-1.0,
+        #     high=1.0,
+        #     shape=(self.cfg.action_space,),
+        #     dtype=np.float32,
+        # )
+
         # create auxiliary variables for computing applied action, observations and rewards
         self.robot_dof_lower_limits = self._robot.data.soft_joint_pos_limits[
             0, :, 0
@@ -184,7 +202,7 @@ class ObstacleEnv(DirectRLEnv):
         self._target_distance_prev = None
 
         self.grade = 0
-        self.precision = 100
+        self.precision = 1
 
         self.now_joint_vel = torch.zeros_like(self._robot.data.joint_vel, device=self.device)
         self.prev_joint_vel = torch.zeros_like(self._robot.data.joint_vel, device=self.device)
@@ -254,8 +272,8 @@ class ObstacleEnv(DirectRLEnv):
         # target_vel = actions.clone()
         # disparity_angle = target_vel.clone()  # * (self.cfg.decimation / 120)
         # self.target_torque = self.cfg.kp * disparity_angle + self.cfg.kd * (target_vel - joint_vel)
-        self.target_vel = actions.clone()  # * self.cfg.vel_scale_factor
-        self.now_joint_vel = actions.clone()
+        self.target_vel = actions.clone() * self.cfg.vel_scale_factor
+        self.now_joint_vel = self.target_vel.clone()
         self.temp_target_pos = self._robot.data.joint_pos_target  # 확인하려고
 
         self.target_obj.write_root_velocity_to_sim(
@@ -347,7 +365,8 @@ class ObstacleEnv(DirectRLEnv):
 
         # 각 가속도 평가
         now_joint_vel = self.now_joint_vel.clone()
-        joint_acc = torch.mean(torch.abs((now_joint_vel - self.prev_joint_vel) / (self.cfg.decimation / 120)))
+        joint_acc = torch.mean(torch.abs((now_joint_vel - self.prev_joint_vel) / (self.cfg.decimation / 120)), dim=1)
+        # print(joint_acc)
         self.prev_joint_vel = self.now_joint_vel
 
         # computed_reward = (
@@ -413,13 +432,13 @@ class ObstacleEnv(DirectRLEnv):
         self._donecount[env_ids] = 0
 
         # precision 업데이트
-        # new_precision = torch.mean(self.min_target_distance[env_ids].float()).item()
-        self.precision = torch.mean(self.min_target_distance[self.num_envs - self.cfg.env_bundles :].float()).item()
+        new_precision = torch.mean(self.min_target_distance[self.num_envs - self.cfg.env_bundles :].float()).item()
+        self.precision = 0.2*new_precision + 0.8*self.precision
         self.min_target_distance_back[env_ids] = self.min_target_distance[env_ids]
         self.min_target_distance[env_ids] = 100
 
         if self.precision < 0.01 and self.grade < 4 :
-            self.precision = 100
+            self.precision = 1
             self.grade += 1
 
         # timestep 초기화

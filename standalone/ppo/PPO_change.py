@@ -23,6 +23,10 @@ def mix_weights(local_weights, central_weights, alpha=0.5):
         mixed_weights[key] = alpha * local_weights[key] + (1 - alpha) * central_weights[key]
     return mixed_weights
 
+def init_weights(m):
+    if isinstance(m, nn.Linear):
+        nn.init.xavier_normal_(m.weight)  # Xavier 초기화
+        nn.init.zeros_(m.bias)            # 바이어스는 0으로 초기화
 
 ################################## PPO Policy ##################################
 class RolloutBuffer:
@@ -92,6 +96,29 @@ class ActorCritic(nn.Module):
 
     def forward(self):
         raise NotImplementedError
+
+    def _initialize_weights(self, module):
+        """
+        Custom weight initialization for the model
+        """
+        if isinstance(module, nn.Linear):
+            # Xavier initialization for hidden layers
+            nn.init.xavier_uniform_(module.weight)
+            if module.bias is not None:
+                nn.init.zeros_(module.bias)
+        
+        # Special handling for the output layers
+        if isinstance(module, nn.Linear) and module.out_features == self.action_dim:
+            # Small initialization for actor's output layer
+            nn.init.uniform_(module.weight, -0.01, 0.01)
+            if module.bias is not None:
+                nn.init.zeros_(module.bias)
+
+        if isinstance(module, nn.Linear) and module.out_features == 1:
+            # Small initialization for critic's output layer
+            nn.init.uniform_(module.weight, -0.01, 0.01)
+            if module.bias is not None:
+                nn.init.zeros_(module.bias)
     
     def act(self, state):
 
