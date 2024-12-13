@@ -85,6 +85,8 @@ class ActorCritic(nn.Module):
                     )
         self.actor = self.actor.to(device)
         self.critic = self.critic.to(device)
+
+        self.apply(self._initialize_weights)
         
     def set_action_std(self, new_action_std):
         if self.has_continuous_action_space:
@@ -392,13 +394,13 @@ class PPO:
             buf.clear()
     
     def save(self, checkpoint_path):
-        torch.save(self.policy_old.state_dict(), checkpoint_path)
+        torch.save(self.policy.state_dict(), checkpoint_path)
    
     def load(self, checkpoint_path):
-        self.policy_old.load_state_dict(torch.load(checkpoint_path, map_location=lambda storage, loc: storage))
-        self.policy.load_state_dict(torch.load(checkpoint_path, map_location=lambda storage, loc: storage))
+        self.policy_old.load_state_dict(torch.load(checkpoint_path, map_location=lambda storage, loc: storage, weights_only=True))
+        self.policy.load_state_dict(torch.load(checkpoint_path, map_location=lambda storage, loc: storage, weights_only=True))
         for local_p in self.local_policies:
-            local_p.load_state_dict(torch.load(checkpoint_path, map_location=lambda storage, loc: storage))
+            local_p.load_state_dict(torch.load(checkpoint_path, map_location=lambda storage, loc: storage, weights_only=True))
 
         
         

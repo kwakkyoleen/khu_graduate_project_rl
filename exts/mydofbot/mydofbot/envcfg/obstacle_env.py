@@ -74,7 +74,7 @@ class ObstacleEnvCfg(DirectRLEnvCfg):
     rew_scale_time = -0.2
     rew_scale_collision = -400.0
     rew_scale_success = 5000.0
-    rew_scale_acc = 0.009
+    rew_scale_acc = 0.05
 
     # angle scale
     angle_scale_factor = 0.1
@@ -272,8 +272,13 @@ class ObstacleEnv(DirectRLEnv):
         # target_vel = actions.clone()
         # disparity_angle = target_vel.clone()  # * (self.cfg.decimation / 120)
         # self.target_torque = self.cfg.kp * disparity_angle + self.cfg.kd * (target_vel - joint_vel)
-        self.target_vel = actions.clone() * self.cfg.vel_scale_factor
-        self.now_joint_vel = self.target_vel.clone()
+        # robot_ef_pos = self._robot.data.body_pos_w[:, self.end_effector_idx].clone()
+        # target_pos = self.target_object_pos.clone()
+        # target_disparity = target_pos - robot_ef_pos
+        # target_distance = torch.sum(target_disparity**2, dim=-1)
+        # self.target_vel = actions.clone() * self.cfg.vel_scale_factor * (1.0 - torch.exp(-40*target_distance)).unsqueeze(1)
+        self.target_vel = actions.clone() * self.cfg.vel_scale_factor 
+        self.now_joint_vel = actions.clone() * self.cfg.vel_scale_factor
         self.temp_target_pos = self._robot.data.joint_pos_target  # 확인하려고
 
         self.target_obj.write_root_velocity_to_sim(

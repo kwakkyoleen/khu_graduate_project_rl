@@ -154,7 +154,7 @@ def main():
     #####################################################
 
     ################### checkpointing ###################
-    run_num_pretrained = 30     #### change this to prevent overwriting weights in same env_name folder
+    run_num_pretrained = 31     #### change this to prevent overwriting weights in same env_name folder
 
     directory = "PPO_preTrained"
     if not os.path.exists(directory):
@@ -172,6 +172,7 @@ def main():
     torch.cuda.empty_cache()
     ppo_agent = PPO(15, 6, lr_actor, lr_critic, gamma, K_epochs, eps_clip, has_continuous_action_space, env.unwrapped.num_envs, env_bundles, alpha, action_std)
     if os.path.exists(checkpoint_path):
+        print("load exist pth")
         ppo_agent.load(checkpoint_path)
 
     # track total training time
