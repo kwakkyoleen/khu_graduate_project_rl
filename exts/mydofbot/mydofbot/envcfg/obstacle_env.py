@@ -71,14 +71,14 @@ class ObstacleEnvCfg(DirectRLEnvCfg):
 
     # reward scales
     rew_scale_distance = 20
-    rew_scale_time = -0.2
+    rew_scale_time = -0.005
     rew_scale_collision = -400.0
     rew_scale_success = 5000.0
-    rew_scale_acc = 0.05
+    rew_scale_acc = 0.005
 
     # angle scale
     angle_scale_factor = 0.1
-    vel_scale_factor = 0.5
+    vel_scale_factor = 0.7
 
 
 # @configclass
@@ -276,7 +276,7 @@ class ObstacleEnv(DirectRLEnv):
         # target_pos = self.target_object_pos.clone()
         # target_disparity = target_pos - robot_ef_pos
         # target_distance = torch.sum(target_disparity**2, dim=-1)
-        # self.target_vel = actions.clone() * self.cfg.vel_scale_factor * (1.0 - torch.exp(-40*target_distance)).unsqueeze(1)
+        # self.target_vel = actions.clone() * self.cfg.vel_scale_factor * (1.2 - torch.exp(-20*target_distance)).unsqueeze(1) + 0.2
         self.target_vel = actions.clone() * self.cfg.vel_scale_factor 
         self.now_joint_vel = actions.clone() * self.cfg.vel_scale_factor
         self.temp_target_pos = self._robot.data.joint_pos_target  # 확인하려고
@@ -291,7 +291,7 @@ class ObstacleEnv(DirectRLEnv):
     def _apply_action(self) -> None:
         # self._robot.set_joint_effort_target(self.target_torque)
         self._robot.set_joint_velocity_target(self.target_vel)
-        self._robot.set_joint_position_target(self._robot.data.joint_pos.clone() + self.target_vel.clone() * (5 * self.cfg.decimation / 120))
+        self._robot.set_joint_position_target(self._robot.data.joint_pos.clone() + self.target_vel.clone() * (self.cfg.decimation / 120))
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
         # 장애물과 부딛히면 terminated
@@ -369,10 +369,11 @@ class ObstacleEnv(DirectRLEnv):
         goal_bool = target_distance < 0.01
 
         # 각 가속도 평가
-        now_joint_vel = self.now_joint_vel.clone()
+        # now_joint_vel = self.now_joint_vel.clone()
+        now_joint_vel = self._robot.data.joint_vel.clone()
         joint_acc = torch.mean(torch.abs((now_joint_vel - self.prev_joint_vel) / (self.cfg.decimation / 120)), dim=1)
         # print(joint_acc)
-        self.prev_joint_vel = self.now_joint_vel
+        self.prev_joint_vel = now_joint_vel
 
         # computed_reward = (
         #     torch.exp(-self.cfg.rew_scale_distance * target_distance)
