@@ -291,7 +291,7 @@ class ObstacleEnv(DirectRLEnv):
     def _apply_action(self) -> None:
         # self._robot.set_joint_effort_target(self.target_torque)
         self._robot.set_joint_velocity_target(self.target_vel)
-        self._robot.set_joint_position_target(self._robot.data.joint_pos.clone() + self.target_vel.clone() * (0.6 * self.cfg.decimation / 120))
+        self._robot.set_joint_position_target(self._robot.data.joint_pos.clone() + self.target_vel.clone() * (5 * self.cfg.decimation / 120))
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
         # 장애물과 부딛히면 terminated

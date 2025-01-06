@@ -86,12 +86,12 @@ def main():
 
     print_freq = max_ep_len * 10        # print avg reward in the interval (in num timesteps)
     log_freq = max_ep_len * 2           # log avg reward in the interval (in num timesteps)
-    save_model_freq = int(1e4)          # save model frequency (in num timesteps)
+    save_model_freq = int(2e4)          # save model frequency (in num timesteps)
 
     action_std = 0.6                    # starting std for action distribution (Multivariate Normal)
-    action_std_decay_rate = 0.05        # linearly decay action_std (action_std = action_std - action_std_decay_rate)
-    min_action_std = 0.1                # minimum action_std (stop decay after action_std <= min_action_std)
-    action_std_decay_freq = int(2.5e5)  # action_std decay frequency (in num timesteps)
+    action_std_decay_rate = 0.005        # linearly decay action_std (action_std = action_std - action_std_decay_rate)
+    min_action_std = 0.05                # minimum action_std (stop decay after action_std <= min_action_std)
+    action_std_decay_freq = int(1e3)  # action_std decay frequency (in num timesteps)
     env_bundles = 16
     #####################################################
 
@@ -113,6 +113,10 @@ def main():
 
     random_seed = 0         # set random seed if required (0 = no random seed)
     #####################################################
+
+    time_step = 0
+    i_episode = 0
+    i_grade = 0
 
     # parse configuration
     env_cfg: ObstacleEnvCfg = parse_env_cfg(
@@ -154,7 +158,7 @@ def main():
     #####################################################
 
     ################### checkpointing ###################
-    run_num_pretrained = 35     #### change this to prevent overwriting weights in same env_name folder
+    run_num_pretrained = 38     #### change this to prevent overwriting weights in same env_name folder
 
     directory = "PPO_preTrained"
     if not os.path.exists(directory):
@@ -168,12 +172,32 @@ def main():
     print("save checkpoint path : " + checkpoint_path)
     #####################################################
 
-    # initialize a PPO agent
+    # initialize a PPO agent    time_step = 0
+    i_episode = 0
     torch.cuda.empty_cache()
     ppo_agent = PPO(15, 6, lr_actor, lr_critic, gamma, K_epochs, eps_clip, has_continuous_action_space, env.unwrapped.num_envs, env_bundles, alpha, action_std)
     if os.path.exists(checkpoint_path):
         print("load exist pth")
         ppo_agent.load(checkpoint_path)
+
+        ### 이전 pth가 존재하면 이전 로그파일을 불러옴
+        prev_log_f_name = log_dir + '/PPO_' + env_name + "_log_" + str(run_num-1) + ".csv"
+        
+        if os.path.exists(prev_log_f_name):
+            with open(prev_log_f_name, 'r') as file:
+                # 모든 줄을 읽기
+                lines = file.readlines()
+                if lines and len(lines) > 5:
+                    # 마지막 줄 선택
+                    last_line = lines[-1].strip()
+                    # 쉽표로 분리
+                    last_line_split = last_line.split(',')
+                    print("last state : ", last_line_split)
+                    time_step = int(last_line_split[1])
+                    i_episode = int(last_line_split[0])
+                    i_grade = int(last_line_split[7])
+
+
 
     # track total training time
     start_time = datetime.now().replace(microsecond=0)
@@ -196,12 +220,14 @@ def main():
     log_running_reward = 0
     log_running_episodes = 0
 
-    time_step = 0
-    i_episode = 0
-
     min_acc = 100
 
-
+    # ppo std 조정
+    if has_continuous_action_space:
+        for _ in range(time_step % action_std_decay_freq):
+            ppo_agent.decay_action_std(action_std_decay_rate, min_action_std)
+    # grade 초기화
+    env.unwrapped.grade = i_grade
 
     # create action buffers (position + quaternion)
     actions = torch.zeros(env.unwrapped.action_space.shape, device=env.unwrapped.device)

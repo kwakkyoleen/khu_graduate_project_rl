@@ -138,6 +138,22 @@ class ActorCritic(nn.Module):
 
         return action.detach(), action_logprob.detach(), state_val.detach()
     
+    def act_without_prob(self, state):
+
+        if self.has_continuous_action_space:
+            action_mean = self.actor(state)
+            cov_mat = torch.diag(self.action_var).unsqueeze(dim=0)
+            dist = MultivariateNormal(action_mean, cov_mat)
+        else:
+            action_probs = self.actor(state)
+            dist = Categorical(action_probs)
+
+        action = action_mean
+        action_logprob = dist.log_prob(action)
+        state_val = self.critic(state)
+
+        return action.detach(), action_logprob.detach(), state_val.detach()
+    
     def evaluate(self, state, action):
         if self.has_continuous_action_space:
             action_mean = self.actor(state)
@@ -173,7 +189,7 @@ class AsyncMultiAgentManager:
             if agent_idx < len(self.local_policies) : 
                 action, logprob, state_value = self.local_policies[agent_idx].act(state)
             else : 
-                action, logprob, state_value = self.central_policy.act(state)
+                action, logprob, state_value = self.central_policy.act_without_prob(state)
         return action, logprob, state_value
 
     async def get_all_actions(self, states, bundles):
@@ -240,7 +256,7 @@ class PPO:
     def decay_action_std(self, action_std_decay_rate, min_action_std):
         print("--------------------------------------------------------------------------------------------")
         if self.has_continuous_action_space:
-            self.action_std = self.action_std - action_std_decay_rate
+            self.action_std = self.action_std * (1 - action_std_decay_rate)
             self.action_std = round(self.action_std, 4)
             if (self.action_std <= min_action_std):
                 self.action_std = min_action_std
