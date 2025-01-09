@@ -90,8 +90,8 @@ def main():
 
     action_std = 0.6                    # starting std for action distribution (Multivariate Normal)
     action_std_decay_rate = 0.005        # linearly decay action_std (action_std = action_std - action_std_decay_rate)
-    min_action_std = 0.05                # minimum action_std (stop decay after action_std <= min_action_std)
-    action_std_decay_freq = int(1e3)  # action_std decay frequency (in num timesteps)
+    min_action_std = 0.1                # minimum action_std (stop decay after action_std <= min_action_std)
+    action_std_decay_freq = int(2e3)  # action_std decay frequency (in num timesteps)
     env_bundles = 16
     #####################################################
 
@@ -106,7 +106,7 @@ def main():
 
     eps_clip = 0.2          # clip parameter for PPO
     gamma = 0.99            # discount factor
-    alpha = 0.05
+    alpha = 0.1
 
     lr_actor = 0.0003       # learning rate for actor network
     lr_critic = 0.001       # learning rate for critic network
@@ -158,7 +158,7 @@ def main():
     #####################################################
 
     ################### checkpointing ###################
-    run_num_pretrained = 38     #### change this to prevent overwriting weights in same env_name folder
+    run_num_pretrained = 39     #### change this to prevent overwriting weights in same env_name folder
 
     directory = "PPO_preTrained"
     if not os.path.exists(directory):
@@ -286,12 +286,12 @@ def main():
 
             # value
             if time_step % 50 == 0:
-                temp_value = ppo_agent.local_policies[0].critic(state[3].unsqueeze(0)).squeeze(0)
-                temp_action = ppo_agent.local_policies[0].actor(state[3].unsqueeze(0)).squeeze(0)
+                temp_value = ppo_agent.local_policies[0].critic(state[central_idx].unsqueeze(0)).squeeze(0)
+                temp_action = ppo_agent.local_policies[0].actor(state[central_idx].unsqueeze(0)).squeeze(0)
                 # print(f"vel_target : {[round(x, 2) for x in env.temp_target_pos[0].tolist()]}")
                 print(f"grade : {env.unwrapped.grade}, precision : {env.unwrapped.precision}")
-                print(f"machine 3 state : {[round(x, 4) for x in state[3, 0:3].tolist()]}, acc : {round(env.unwrapped.target_distance[0].item(),4)}")
-                print(f"machine 3 value : {round(temp_value.item(), 2)}, action : {[round(x, 2) for x in temp_action.tolist()]}")
+                print(f"machine central state : {[round(x, 4) for x in state[central_idx, 0:3].tolist()]}, acc : {round(env.unwrapped.target_distance[0].item(),4)}")
+                print(f"machine central value : {round(temp_value.item(), 2)}, action : {[round(x, 2) for x in temp_action.tolist()]}")
 
             # if continuous action space; then decay action std of ouput action distribution
             if has_continuous_action_space and time_step % action_std_decay_freq == 0:
@@ -336,7 +336,7 @@ def main():
                     central_update_idx += 1
                 
                 print("central update..")
-                ppo_agent.update_central()
+                ppo_agent.update_central(rewards_latest)
 
             # printing average reward
             if time_step % print_freq == 0:

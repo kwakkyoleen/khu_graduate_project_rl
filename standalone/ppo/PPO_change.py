@@ -3,6 +3,7 @@ import torch.nn as nn
 from torch.distributions import MultivariateNormal
 from torch.distributions import Categorical
 import asyncio
+import numpy as np
 
 ################################## set device ##################################
 print("============================================================================================")
@@ -27,6 +28,10 @@ def init_weights(m):
     if isinstance(m, nn.Linear):
         nn.init.xavier_normal_(m.weight)  # Xavier 초기화
         nn.init.zeros_(m.bias)            # 바이어스는 0으로 초기화
+
+def softmax(x):
+    exp_x = np.exp(x - np.max(x))  # 안정적인 계산을 위해 x에서 max 값을 뺌
+    return exp_x / np.sum(exp_x)
 
 ################################## PPO Policy ##################################
 class RolloutBuffer:
@@ -59,27 +64,27 @@ class ActorCritic(nn.Module):
         # actor
         if has_continuous_action_space :
             self.actor = nn.Sequential(
-                            nn.Linear(state_dim, 128),
+                            nn.Linear(state_dim, 256),
                             nn.Tanh(),
-                            nn.Linear(128, 128),
+                            nn.Linear(256, 128),
                             nn.Tanh(),
                             nn.Linear(128, action_dim),
                             nn.Tanh()
                         )
         else:
             self.actor = nn.Sequential(
-                            nn.Linear(state_dim, 128),
+                            nn.Linear(state_dim, 256),
                             nn.Tanh(),
-                            nn.Linear(126, 128),
+                            nn.Linear(256, 128),
                             nn.Tanh(),
                             nn.Linear(128, action_dim),
                             nn.Softmax(dim=-1)
                         )
         # critic
         self.critic = nn.Sequential(
-                        nn.Linear(state_dim, 128),
+                        nn.Linear(state_dim, 256),
                         nn.Tanh(),
-                        nn.Linear(128, 128),
+                        nn.Linear(256, 128),
                         nn.Tanh(),
                         nn.Linear(128, 1)
                     )
@@ -395,11 +400,14 @@ class PPO:
         # # clear buffer
         # self.buffer.clear()
 
-    def update_central(self):
+    def update_central(self, rewards_latest):
+        rewards_mean = rewards_latest.reshape(self.env_nums//self.env_bundles,self.env_bundles).mean(axis=1)[:-1]/10
+        rewards_softmax = softmax(rewards_mean)
+        print(f"mean : {rewards_mean}, softmax : {rewards_softmax}")
         central_state_dict = self.policy.state_dict()
-        for local_policy in self.local_policies:
+        for idx, local_policy in enumerate(self.local_policies):
             local_state_dict = local_policy.state_dict()
-            mixed_weights = mix_weights(local_state_dict, central_state_dict, alpha=self.alpha)
+            mixed_weights = mix_weights(local_state_dict, central_state_dict, alpha=self.alpha * 0.3 + 0.7 * self.alpha* rewards_softmax[idx])
             central_state_dict.update(mixed_weights)
             mixed_weights = mix_weights(central_state_dict, local_state_dict, alpha=self.alpha)
             local_policy.load_state_dict(mixed_weights)
