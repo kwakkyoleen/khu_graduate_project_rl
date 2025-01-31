@@ -91,7 +91,7 @@ def main():
     action_std = 0.6                    # starting std for action distribution (Multivariate Normal)
     action_std_decay_rate = 0.005        # linearly decay action_std (action_std = action_std - action_std_decay_rate)
     min_action_std = 0.1                # minimum action_std (stop decay after action_std <= min_action_std)
-    action_std_decay_freq = int(2e3)  # action_std decay frequency (in num timesteps)
+    action_std_decay_freq = int(1e4)  # action_std decay frequency (in num timesteps)
     env_bundles = 16
     #####################################################
 
@@ -158,7 +158,7 @@ def main():
     #####################################################
 
     ################### checkpointing ###################
-    run_num_pretrained = 39     #### change this to prevent overwriting weights in same env_name folder
+    run_num_pretrained = 41     #### change this to prevent overwriting weights in same env_name folder
 
     directory = "PPO_preTrained"
     if not os.path.exists(directory):

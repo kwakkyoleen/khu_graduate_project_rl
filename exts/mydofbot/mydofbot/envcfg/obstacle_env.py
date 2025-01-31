@@ -75,6 +75,7 @@ class ObstacleEnvCfg(DirectRLEnvCfg):
     rew_scale_collision = -400.0
     rew_scale_success = 5000.0
     rew_scale_acc = 0.005
+    rew_scale_pose = 0.1
 
     # angle scale
     angle_scale_factor = 0.1
@@ -160,6 +161,24 @@ def make_rand_val(grade : int, env_ids: torch.Tensor) -> torch.Tensor:
     result = torch.stack((col_0, col_1, col_2), dim=1)
     return result
 
+def find_foot_of_perpendicular_3d(point, line_point1, line_point2):
+    """
+    3D에서 특정 점에서 두 점으로 정의된 선 위에 수선의 발을 찾는 함수.
+    :param point: (3,) torch.Tensor, 수선을 내릴 점 (x0, y0, z0)
+    :param line_point1: (3,) torch.Tensor, 선의 첫 번째 점 (x1, y1, z1)
+    :param line_point2: (3,) torch.Tensor, 선의 두 번째 점 (x2, y2, z2)
+    :return: (3,) torch.Tensor, 수선의 발 (x_t, y_t, z_t)
+    """
+    # 선 벡터와 점 벡터 계산
+    line_vec = line_point2 - line_point1  # 선의 방향 벡터
+    point_vec = point - line_point1      # 점에서 선의 시작점까지의 벡터
+    
+    # 매개변수 t 계산
+    t = torch.sum(point_vec * line_vec, dim=1, keepdim=True) / torch.sum(line_vec * line_vec, dim=1, keepdim=True)
+    
+    # 수선의 발 좌표
+    # foot_point = line_point1 + t * line_vec
+    return t
 
 class ObstacleEnv(DirectRLEnv):
     cfg: ObstacleEnvCfg
@@ -199,6 +218,12 @@ class ObstacleEnv(DirectRLEnv):
         self._donecount = torch.zeros((self.num_envs), device=self.device)
 
         self.end_effector_idx = self._robot.find_bodies("END_EFFECTOR")[0][0]
+        self.l1_idx = self._robot.find_bodies("ARM")[0][0]
+        self.l2_idx = self._robot.find_bodies("FOREARM")[0][0]
+        self.l3_idx = self._robot.find_bodies("LOWER_WRIST")[0][0]
+        self.l4_idx = self._robot.find_bodies("UPPER_WRIST")[0][0]
+        self.l5_idx = self._robot.find_bodies("END_EFFECTOR")[0][0]
+        self.lsizes = [0.128, 0.115, 0.28, 0.14,0.105, 0.105] # l0 ~ l5
         self._target_distance_prev = None
 
         self.grade = 0
@@ -356,8 +381,10 @@ class ObstacleEnv(DirectRLEnv):
         target_pos: torch.Tensor,
         contact_list: torch.Tensor,
     ) -> torch.Tensor:
-        target_disparity = target_pos - robot_ef_pos
+        target_disparity = target_pos.clone() - robot_ef_pos
         target_distance = torch.sum(target_disparity**2, dim=-1)
+        target_distance_sqrt = torch.sqrt(target_distance.clone())
+        distance_scale_fector = torch.exp((0.05-target_distance_sqrt)*100)
         # if self._target_distance_prev is None :
         #     self._target_distance_prev = target_distance
         # target_distance_disparity = self._target_distance_prev - target_distance
@@ -372,8 +399,28 @@ class ObstacleEnv(DirectRLEnv):
         # now_joint_vel = self.now_joint_vel.clone()
         now_joint_vel = self._robot.data.joint_vel.clone()
         joint_acc = torch.mean(torch.abs((now_joint_vel - self.prev_joint_vel) / (self.cfg.decimation / 120)), dim=1)
+        joint_acc_rev = 1/(20 * joint_acc + 1)
+
         # print(joint_acc)
         self.prev_joint_vel = now_joint_vel
+
+        # 로봇 포즈 평가
+        l1_pose = self._robot.data.body_pos_w[:, self.l1_idx].clone()
+        l2_pose = self._robot.data.body_pos_w[:, self.l2_idx].clone()
+        l3_pose = self._robot.data.body_pos_w[:, self.l3_idx].clone()
+        l4_pose = self._robot.data.body_pos_w[:, self.l4_idx].clone()
+        l5_pose = self._robot.data.body_pos_w[:, self.l5_idx].clone()
+        l2_t = find_foot_of_perpendicular_3d(l2_pose, l1_pose, target_pos)
+        l3_t = find_foot_of_perpendicular_3d(l3_pose, l1_pose, target_pos)
+        l4_t = find_foot_of_perpendicular_3d(l4_pose, l1_pose, target_pos)
+        l5_t = find_foot_of_perpendicular_3d(l5_pose, l1_pose, target_pos)
+
+        poots = torch.cat([l2_t/self.lsizes[2], (l3_t - l2_t)/self.lsizes[3], (l4_t - l3_t)/self.lsizes[4], (l5_t - l4_t)/self.lsizes[5]], dim=1)
+
+        # 각 env에 대해 표준편차 계산
+        std_tensor = torch.std(poots, dim=1, keepdim=True) # -0.3~2 범위로 나옴
+        std_clipped = torch.clamp((std_tensor - 0.3), min=0).squeeze(-1)
+        # print(f"poots[0] : {poots[127]}, std_tensor : {std_clipped[127]}")
 
         # computed_reward = (
         #     torch.exp(-self.cfg.rew_scale_distance * target_distance)
@@ -382,7 +429,8 @@ class ObstacleEnv(DirectRLEnv):
         # )
         computed_reward = (
             torch.exp(-self.cfg.rew_scale_distance * target_distance)
-            - joint_acc * self.cfg.rew_scale_acc
+            + joint_acc_rev * self.cfg.rew_scale_acc * distance_scale_fector
+            - std_clipped * self.cfg.rew_scale_pose
         )
         self._target_distance_prev = target_distance
         # print("col bool : ", collision_bool)
