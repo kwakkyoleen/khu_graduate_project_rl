@@ -384,7 +384,7 @@ class ObstacleEnv(DirectRLEnv):
         target_disparity = target_pos.clone() - robot_ef_pos
         target_distance = torch.sum(target_disparity**2, dim=-1)
         target_distance_sqrt = torch.sqrt(target_distance.clone())
-        distance_scale_fector = torch.exp((0.05-target_distance_sqrt)*100)
+        distance_scale_fector = torch.exp((0.05-target_distance_sqrt)*40)
         # if self._target_distance_prev is None :
         #     self._target_distance_prev = target_distance
         # target_distance_disparity = self._target_distance_prev - target_distance
@@ -396,10 +396,13 @@ class ObstacleEnv(DirectRLEnv):
         goal_bool = target_distance < 0.01
 
         # 각 가속도 평가
-        # now_joint_vel = self.now_joint_vel.clone()
-        now_joint_vel = self._robot.data.joint_vel.clone()
-        joint_acc = torch.mean(torch.abs((now_joint_vel - self.prev_joint_vel) / (self.cfg.decimation / 120)), dim=1)
-        joint_acc_rev = 1/(20 * joint_acc + 1)
+        now_joint_vel = self.now_joint_vel.clone()
+        # now_joint_vel = self._robot.data.joint_vel.clone()
+        joint_acc = torch.mean(torch.abs((now_joint_vel.clone() - self.prev_joint_vel) / (self.cfg.decimation / 120)), dim=1)
+        joint_acc_rev = 1/(5 * joint_acc + 1) # 20? 50? 100?
+
+        # 각속도 평가
+        joint_vel_rev = 1/(1 + 40 * torch.mean(torch.abs(now_joint_vel.clone()), dim=1))
 
         # print(joint_acc)
         self.prev_joint_vel = now_joint_vel
@@ -429,7 +432,7 @@ class ObstacleEnv(DirectRLEnv):
         # )
         computed_reward = (
             torch.exp(-self.cfg.rew_scale_distance * target_distance)
-            + joint_acc_rev * self.cfg.rew_scale_acc * distance_scale_fector
+            + (joint_acc_rev + joint_vel_rev) * self.cfg.rew_scale_acc * distance_scale_fector
             - std_clipped * self.cfg.rew_scale_pose
         )
         self._target_distance_prev = target_distance
